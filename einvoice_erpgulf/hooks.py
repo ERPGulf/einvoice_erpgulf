@@ -4,276 +4,152 @@ app_publisher = "ERPGulf.com"
 app_description = "E-Invoice app for ERPNext that can be adopted for any country from ERPGulf.com"
 app_email = "support@erpgulf.com"
 app_license = "mit"
+required_apps = ["erpnext"]
 
-# Apps
-# ------------------
 
-# required_apps = []
-
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "einvoice_erpgulf",
-# 		"logo": "/assets/einvoice_erpgulf/logo.png",
-# 		"title": "einvoice_erpgulf",
-# 		"route": "/einvoice_erpgulf",
-# 		"has_permission": "einvoice_erpgulf.api.permission.has_app_permission",
-# 	}
-# ]
-
-# The dock, the rail down the left of the desk, is a document rather than a hook. Author it in
-# Manage Dock on a developer-mode site and press Export to App, and it is written to
-# `einvoice_erpgulf/dock/einvoice_erpgulf/einvoice_erpgulf.json` for git to carry. An app that ships none has no
-# rail: its sidebar gets a switcher in the header instead.
+# =====================================================================
+# COUNTRIES
+# =====================================================================
+# One entry per country the app supports. The key is the country name
+# exactly as it appears on Company > Country. The value is the profile
+# class for that country: countries/<cc>/profile.py, which holds the
+# national rules (Peppol identifier scheme, tax-ID rule, tax categories,
+# region codes, currency decimals, customization IDs, labels for the UI).
 #
-# A companion app, one that extends a host app rather than standing on its own, says so with
-# `mount_on` on that same record, and its entries are appended to the host's rail. Mounting keeps
-# the companion off the apps screen, so it takes precedence over any add_to_apps_screen above.
-
-# Includes in <head>
-# ------------------
-
-# include js, css files in header of desk.html
-# app_include_css = "/assets/einvoice_erpgulf/css/einvoice_erpgulf.css"
-# app_include_js = "/assets/einvoice_erpgulf/js/einvoice_erpgulf.js"
-
-# include js, css files in header of web template
-# web_include_css = "/assets/einvoice_erpgulf/css/einvoice_erpgulf.css"
-# web_include_js = "/assets/einvoice_erpgulf/js/einvoice_erpgulf.js"
-
-# include custom scss in every website theme (without file extension ".scss")
-# website_theme_scss = "einvoice_erpgulf/public/scss/website"
-
-# include js, css files in header of web form
-# webform_include_js = {"doctype": "public/js/doctype.js"}
-# webform_include_css = {"doctype": "public/css/doctype.css"}
-
-# include js in page
-# page_js = {"page" : "public/js/file.js"}
-
-# include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
-# doctype_kanban_js = {"doctype" : "public/js/doctype_kanban.js"}
-# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
-# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
-
-# Svg Icons
-# ------------------
-# include app icons in desk
-# app_include_icons = "einvoice_erpgulf/public/icons.svg"
-
-# Home Pages
-# ----------
-
-# application home page (will override Website Settings)
-# home_page = "login"
-
-# website user home page (by Role)
-# role_home_page = {
-# 	"Role": "home_page"
-# }
-
-# Generators
-# ----------
-
-# automatically create page for each record of this doctype
-# website_generators = ["Web Page"]
-
-# automatically load and sync documents of this doctype from downstream apps
-# importable_doctypes = [doctype_1]
-
-# Jinja
-# ----------
-
-# add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "einvoice_erpgulf.utils.jinja_methods",
-# 	"filters": "einvoice_erpgulf.utils.jinja_filters"
-# }
-
-# Installation
-# ------------
-
-# before_install = "einvoice_erpgulf.install.before_install"
-# after_install = "einvoice_erpgulf.install.after_install"
-
-# Uninstallation
-# ------------
-
-# before_uninstall = "einvoice_erpgulf.uninstall.before_uninstall"
-# after_uninstall = "einvoice_erpgulf.uninstall.after_uninstall"
-
-# Integration Setup
-# ------------------
-# To set up dependencies/integrations with other apps
-# Name of the app being installed is passed as an argument
-
-# before_app_install = "einvoice_erpgulf.utils.before_app_install"
-# after_app_install = "einvoice_erpgulf.utils.after_app_install"
-
-# Integration Cleanup
-# -------------------
-# To clean up dependencies/integrations with other apps
-# Name of the app being uninstalled is passed as an argument
-
-# before_app_uninstall = "einvoice_erpgulf.utils.before_app_uninstall"
-# after_app_uninstall = "einvoice_erpgulf.utils.after_app_uninstall"
-
-# Build
-# ------------------
-# To hook into the build process
-
-# after_build = "einvoice_erpgulf.build.after_build"
-
-# To hook into the build process of other apps
-# The list of apps being built is passed as an argument
-
-# after_app_build = "einvoice_erpgulf.build.after_app_build"
-
-# Desk Notifications
-# ------------------
-# See frappe.core.notifications.get_notification_config
-
-# notification_config = "einvoice_erpgulf.notifications.get_notification_config"
-
-# Awesome Bar
-# -----------
-# Extra search results: list of dicts with label, description, route, index.
-# route: ["List", "ToDo"], "/desk/docs/some/page", or "https://example.com"
-# awesomebar_search = ["einvoice_erpgulf.search.awesomebar_results"]
-
-# Permissions
-# -----------
-# Permissions evaluated in scripted ways
-
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
+# When a Company has this country, the app loads this profile and every
+# provider adapter for that Company receives it as self.profile.
 #
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+# To add a country:
+#   1. write countries/<cc>/profile.py (subclass PintProfile or EN16931Profile)
+#   2. add countries/<cc>/fixtures/custom_field.json for its own fields
+#   3. add one line here
+#   4. add an empty "<CC>": {} block under einvoice_providers below
+#   5. bench --site <site> migrate   (installs the country fields for
+#      every country that has a Company, and refreshes the dropdowns)
+einvoice_countries = {
+    "United Arab Emirates": "einvoice_erpgulf.countries.ae.profile.AeProfile",
+    "Oman": "einvoice_erpgulf.countries.om.profile.OmProfile",
+    "Belgium": "einvoice_erpgulf.countries.be.profile.BeProfile",
+}
 
-# Document Events
-# ---------------
-# Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
-
-# Scheduled Tasks
-# ---------------
-
-# scheduler_events = {
-# 	"all": [
-# 		"einvoice_erpgulf.tasks.all"
-# 	],
-# 	"daily": [
-# 		"einvoice_erpgulf.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"einvoice_erpgulf.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"einvoice_erpgulf.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"einvoice_erpgulf.tasks.monthly"
-# 	],
-# }
-
-# Testing
-# -------
-
-# before_tests = "einvoice_erpgulf.install.before_tests"
-
-# Extend DocType Class
-# ------------------------------
+# =====================================================================
+# PROVIDERS  (ASPs / Peppol access points / accredited platforms)
+# =====================================================================
+# Grouped by ISO country code. Inside each country: the provider name
+# exactly as it must appear in the dropdowns (Company > E-Invoice
+# Provider and E-Invoice Provider Settings > Provider) -> the adapter
+# class that talks to that provider's API.
 #
-# Specify custom mixins to extend the standard doctype controller.
-# extend_doctype_class = {
-# 	"Task": "einvoice_erpgulf.custom.task.CustomTaskMixin"
-# }
-
-# Overriding Methods
-# ------------------------------
+# A provider is selectable only if it is listed here; Company and
+# Provider Settings refuse any other name. The dropdowns are extended
+# automatically with every name below on bench migrate; nothing has to
+# be edited in the DocType or the Custom Field.
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "einvoice_erpgulf.event.get_events"
-# }
+# The same adapter class may be listed under more than one country when
+# a provider is accredited in several (e.g. a UAE ASP also accredited in
+# Oman): list it again under "OM", no new code needed.
 #
-# each overriding function accepts a `data` argument;
-# generated from the base implementation of the doctype dashboard,
-# along with any modifications made in other Frappe apps
-# override_doctype_dashboards = {
-# 	"Task": "einvoice_erpgulf.task.get_dashboard_data"
-# }
+# To add a provider:
+#   1. write countries/<cc>/providers/<name>/adapter.py
+#      (class subclassing einvoice_erpgulf.core.base.BaseAdapter)
+#   2. add one line under its country here
+#   3. bench --site <site> clear-cache && bench --site <site> migrate,
+#      then restart the workers (hooks are cached in Redis)
+einvoice_providers = {
+    "AE": {
+        "Flick Network L.L.C": "einvoice_erpgulf.countries.ae.providers.flick.adapter.FlickAdapter",
+        "Marmin AI Software Design LLC": "einvoice_erpgulf.countries.ae.providers.marmin.adapter.MarminAdapter",
+        "Suntech Business Solutions DMCC": "einvoice_erpgulf.countries.ae.providers.suntech.adapter.SuntechAdapter",
+        # "Fynamics Techno Solutions FZCO": "einvoice_erpgulf.countries.ae.providers.fynamics.adapter.FynamicsAdapter",
+    },
+    "OM": {
+        # Oman-accredited providers. A UAE adapter whose Oman API is the same
+        # can be listed again here with the same class path.
+    },
+    "BE": {
+        # Peppol access points for Belgium:
+        # "Access Point Name": "einvoice_erpgulf.countries.be.providers.<name>.adapter.<Name>Adapter",
+    },
+}
 
-# exempt linked doctypes from being automatically cancelled
-#
-# auto_cancel_exempted_doctypes = ["Auto Repeat"]
 
-# Ignore links to specified DocTypes when deleting documents
-# -----------------------------------------------------------
+# =====================================================================
+# Install / migrate
+# =====================================================================
+# core/setup.py installs the country fields for every country that has a
+# Company and appends every registered provider name to the dropdowns.
+after_install = "einvoice_erpgulf.core.setup.after_install"
+after_migrate = "einvoice_erpgulf.core.setup.after_migrate"
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
 
-# Request Events
-# ----------------
-# before_request = ["einvoice_erpgulf.utils.before_request"]
-# after_request = ["einvoice_erpgulf.utils.after_request"]
+# =====================================================================
+# Client scripts
+# =====================================================================
+doctype_js = {
+    "Sales Invoice": [
+        "public/js/einvoice_common.js",
+        "public/js/sales_invoice.js",
+        "public/js/tooltip.js",
+        "public/js/badge_sales.js",
+    ],
+    "Purchase Invoice": [
+        "public/js/einvoice_common.js",
+        "public/js/purchase.js",
+        "public/js/tooltip_pos.js",
+        "public/js/badges_purchase.js",
+    ],
+    "E-Invoice Provider Settings": "public/js/e_invoice_provider_settings.js",
+    "Supplier": "public/js/marmin_party.js",
+}
+doctype_list_js = {
+    "Sales Invoice": "public/js/bulk_submit.js",
+    "Purchase Invoice": "public/js/bulk_submit_pur.js",
+}
 
-# Job Events
-# ----------
-# before_job = ["einvoice_erpgulf.utils.before_job"]
-# after_job = ["einvoice_erpgulf.utils.after_job"]
 
-# User Data Protection
-# --------------------
+# =====================================================================
+# Document events
+# =====================================================================
+doc_events = {
+    "Company": {
+        "validate": "einvoice_erpgulf.core.validation.validate_company_provider",
+    },
+    "Sales Invoice": {
+        "on_submit": "einvoice_erpgulf.core.submit_sales.generate_and_send_einvoice",
+        "before_submit": "einvoice_erpgulf.core.validation.validate_accredited_service_provider",
+        "before_cancel": "einvoice_erpgulf.core.validation.block_cancel_if_reported",
+    },
+    "Purchase Invoice": {
+        "on_submit": "einvoice_erpgulf.core.send_purchase.generate_and_send_einvoice",
+        "before_submit": "einvoice_erpgulf.core.validation.validate_accredited_service_provider",
+        "before_cancel": "einvoice_erpgulf.core.validation.block_cancel_if_reported",
+    },
+}
 
-# user_data_fields = [
-# 	{
-# 		"doctype": "{doctype_1}",
-# 		"filter_by": "{filter_by}",
-# 		"redact_fields": ["{field_1}", "{field_2}"],
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_2}",
-# 		"filter_by": "{filter_by}",
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_3}",
-# 		"strict": False,
-# 	},
-# 	{
-# 		"doctype": "{doctype_4}"
-# 	}
-# ]
 
-# Authentication and authorization
-# --------------------------------
+# =====================================================================
+# Fixtures: the shared (country-neutral) custom fields.
+# Country-specific fields live in countries/<cc>/fixtures and are
+# installed by core/setup.py, not by this list.
+# =====================================================================
+fixtures = [
+    {"dt": "Custom Field", "filters": [["module", "=", "E-Invoice"]]},
+]
 
-# auth_hooks = [
-# 	"einvoice_erpgulf.auth.validate"
-# ]
 
-# Automatically update python controller files with type annotations for this app.
-# export_python_type_annotations = True
+# =====================================================================
+# Scheduler
+# =====================================================================
+scheduler_events = {
+    "cron": {
+        "* * * * *": [
+            "einvoice_erpgulf.core.webhook.update_webhook_logs",
+        ],
+        "*/5 * * * *": [
+            "einvoice_erpgulf.core.status_sync.sync_pending_invoices",
+        ],
+    }
+}
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
-
-# Translation
-# ------------
-# List of apps whose translatable strings should be excluded from this app's translations.
-# ignore_translatable_strings_from = []
-
+import einvoice_erpgulf.core.return_validation  # noqa: E402,F401

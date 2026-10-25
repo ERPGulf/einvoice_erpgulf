@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:title",
+ "creation": "2026-06-17 16:58:04.104533",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "document_id",
+  "incoming_invoice_file",
+  "status",
+  "submit_response"
+ ],
+ "fields": [
+  {
+   "fieldname": "document_id",
+   "fieldtype": "Data",
+   "label": "Document ID"
+  },
+  {
+   "fieldname": "incoming_invoice_file",
+   "fieldtype": "Attach",
+   "label": "Incoming Invoice File"
+  },
+  {
+   "default": "Not Submitted",
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submit_response",
+   "fieldtype": "Small Text",
+   "label": "Submit Response"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "read_only": 1,
+   "unique": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-30 08:59:54.394191",
+ "modified_by": "Administrator",
+ "module": "E-Invoice",
+ "name": "E-Invoice Incoming Invoice",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

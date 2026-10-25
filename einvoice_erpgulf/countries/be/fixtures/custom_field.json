@@ -1,0 +1,26 @@
+[
+ {
+  "doctype": "Custom Field",
+  "module": "E-Invoice",
+  "name": "Sales Invoice-custom_buyer_reference",
+  "dt": "Sales Invoice",
+  "fieldname": "custom_buyer_reference",
+  "label": "Buyer Reference",
+  "fieldtype": "Data",
+  "insert_after": "po_no",
+  "description": "BT-10. Required by Peppol BIS 3.0 when no purchase order number is given",
+  "translatable": 0
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "E-Invoice",
+  "name": "Company-custom_einvoice_provider",
+  "dt": "Company",
+  "fieldname": "custom_einvoice_provider",
+  "label": "Peppol Access Point",
+  "fieldtype": "Select",
+  "insert_after": "custom_einvoice_enabled",
+  "options": "\nFlick Network L.L.C\nMarmin AI Software Design LLC\nSuntech Business Solutions DMCC",
+  "description": "Access points with an adapter are added here automatically on bench migrate"
+ }
+]

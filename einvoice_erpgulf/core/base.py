@@ -1,0 +1,217 @@
+"""Shared base class for provider adapters (the contract every country's
+providers implement). Country-neutral: it never names a country or a
+provider; the profile on self.profile carries the country rules."""
+
+from datetime import timedelta
+import frappe
+from frappe import _
+DEFAULT_TOKEN_TTL_SEC = 55 * 60
+
+
+class BaseAdapter:
+   
+    AUTO_FETCH_DOCUMENTS_ON_SUBMIT = True
+
+    def __init__(self, settings, profile=None):
+        """settings: the active E-Invoice Provider Settings doc for one
+        company. profile: the company's country profile (core/standards);
+        resolved from the company when not passed. Every adapter method
+        reads whatever it needs off these two."""
+        self.settings = settings
+        if profile is None:
+            from einvoice_erpgulf.core.registry import get_profile
+
+            profile = get_profile(settings.company)
+        self.profile = profile
+
+    # ---- document building (for providers that take UBL XML) ----
+    def build_ubl(self, doc, self_billing=False, supplier=None, customer=None):
+        """UBL 2.1 Invoice / CreditNote bytes for ``doc`` per this company's
+        profile. Parties default to Company + Customer (sales) or Supplier +
+        Company (purchase); pass PartyInfo dicts to override."""
+        from einvoice_erpgulf.core.standards.ubl.builder import build_ubl, party_from_company, party_from_customer
+
+        if doc.doctype == "Purchase Invoice":
+            supplier = supplier or party_from_customer(doc.supplier, self.profile, doc.get("supplier_address"))
+            customer = customer or party_from_company(
+                doc.company, self.profile, doc.get("billing_address"), self.settings.get("participant_id")
+            )
+            self_billing = True
+        else:
+            supplier = supplier or party_from_company(
+                doc.company, self.profile, doc.get("company_address"), self.settings.get("participant_id")
+            )
+            customer = customer or party_from_customer(doc.customer, self.profile, doc.get("customer_address"))
+        return build_ubl(doc, self.profile, supplier, customer, self_billing=self_billing)
+
+    def _not_supported(self, feature):
+        """Clear user-facing message for a method this adapter does not
+        implement. Leave optional base methods alone in a subclass and the
+        button that calls them shows this instead of a traceback."""
+        frappe.throw(
+            _("{0} is not supported by {1}.").format(feature, self.settings.provider),
+            title=_("Not supported"),
+        )
+
+    # ---- shared helpers (every adapter gets these for free) ----
+    def get_base_url(self):
+        """Base URL Override wins only if someone deliberately set it.
+        Otherwise the provider's normal Base URL."""
+        return self.settings.base_url_override or self.settings.base_url
+
+    def _cache_key(self):
+        return f"einvoice_token:{self.settings.name}"
+
+    def _token_expiry_cache_key(self):
+        return f"einvoice_token_expiry:{self.settings.name}"
+
+    def get_cached_token(self):
+        return frappe.cache().get_value(self._cache_key())
+
+    def set_cached_token(self, token, expires_in_sec=DEFAULT_TOKEN_TTL_SEC):
+        """Access tokens only ever live here (Redis, via frappe.cache())"""
+        frappe.cache().set_value(self._cache_key(), token, expires_in_sec=expires_in_sec)
+        expiry = frappe.utils.now_datetime() + timedelta(seconds=expires_in_sec)
+        frappe.cache().set_value(
+            self._token_expiry_cache_key(), expiry.isoformat(), expires_in_sec=expires_in_sec
+        )
+
+    def get_token_expiry(self):
+        """Best-effort expiry of whatever token is currently cached, for
+        display only. """
+        raw = frappe.cache().get_value(self._token_expiry_cache_key())
+        return frappe.utils.get_datetime(raw) if raw else None
+
+    def save_outgoing_payload(self, doc, payload):
+        """Attach the exact JSON body this adapter is about to send """
+        provider_slug = self.__class__.__name__.replace("Adapter", "").lower() or "provider"
+        file_name = f"{doc.name}_{provider_slug}_payload.json"
+
+        old_files = frappe.get_all(
+            "File",
+            filters={
+                "attached_to_doctype": doc.doctype,
+                "attached_to_name": doc.name,
+                "file_name": file_name,
+            },
+            fields=["name"],
+        )
+        for f in old_files:
+            frappe.delete_doc("File", f.name, force=1, ignore_permissions=True)
+
+        file_doc = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": file_name,
+                "is_private": 1,
+                "content": frappe.as_json(payload, indent=2),
+                "attached_to_doctype": doc.doctype,
+                "attached_to_name": doc.name,
+            }
+        )
+        file_doc.insert(ignore_permissions=True)
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+    def get_valid_token(self):
+        """Return a cached OAuth2 token, refreshing via _fetch_token() if
+        it's missing or expired. Only meaningful for a provider/row using
+        OAuth2 - subclasses implement _fetch_token()."""
+        token = self.get_cached_token()
+        if token:
+            return token
+        return self._fetch_token()
+
+    def _fetch_token(self):
+        self._not_supported("Token fetch")
+
+    # ---- methods every adapter should implement ----
+    def get_auth_headers(self, extra=None):
+        self._not_supported("Authentication")
+
+    def verify_auth(self):
+        self._not_supported("Test Auth")
+
+    def get_participant_details(self):
+        self._not_supported("Participant details")
+
+    def lookup_peppol_id(self, peppol_id):
+        self._not_supported("Peppol ID lookup")
+
+    def update_participant(self, company_doc):
+        self._not_supported("Participant update")
+
+    def submit_invoice(self, doctype, doc, json_data=None):
+        """Build this ASP's own payload for doc and send it"""
+        self._not_supported("Invoice submission")
+
+    def parse_submit_response(self, status_code, response_data):
+        """Pull the fields the shared submit flow stores on the invoice out
+        of submit_invoice()'s response. Returns a dict with document_id,
+        reporting_status, exchange_status and success (bool)."""
+        body = response_data if isinstance(response_data, dict) else {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+
+        document_id = data.get("id") or body.get("id")
+        reporting_status = data.get("reporting_status") or body.get("reporting_status")
+        exchange_status = data.get("exchange_status") or body.get("exchange_status")
+
+        success = False
+        if status_code in (200, 201):
+            if isinstance(response_data, dict):
+                success = body.get("status") in ("success", "processed", "accepted") or bool(document_id)
+            else:
+                success = True
+
+        return {
+            "document_id": document_id,
+            "reporting_status": reporting_status,
+            "exchange_status": exchange_status,
+            "success": success,
+        }
+
+    def get_status_from_document_status(self, body):
+        """reporting_status out of a get_document_status() "response" body,
+        for the shared "Get Document Status" buttons. Override if needed."""
+        if not isinstance(body, dict):
+            return None
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        return data.get("reporting_status") or body.get("reporting_status")
+
+    def get_document_status(self, doctype, doc):
+        """Should return {"http_status": <int>, "response": <body>}."""
+        self._not_supported("Document status")
+
+    def get_document_xml(self, doctype, doc):
+        self._not_supported("XML download")
+
+    def get_document_pdf(self, doctype, doc):
+        self._not_supported("PDF download")
+
+    def register_webhook(self):
+        self._not_supported("Webhook subscription")
+
+    def get_subscription(self):
+        self._not_supported("Webhook subscription details")
+
+    def get_webhook_deliveries(self):
+        self._not_supported("Webhook delivery log")
+
+    def parse_incoming_invoice(self, invoice_json):
+        """Turn this ASP's incoming (received) invoice JSON into one common
+        shape, so the shared "Get Incoming Invoices" import never has to
+        know any provider's field names. Must return:
+
+        {
+            "supplier_name": str, "vat_number": str,
+            "posting_date": str, "due_date": str, "currency": str,
+            "document_id": str, "conversion_rate": float or None,
+            "payment_means_code": str or None,
+            "lines": [{"name", "description", "qty", "uom", "rate",
+                       "amount", "vat_rate"}],
+        }
+        """
+        self._not_supported("Incoming invoice import")
+
+    def get_webhook_listener_url(self):
+        """The URL this ASP's own server should call to deliver webhook"""
+        return None

@@ -1,14 +1,14 @@
 [project]
 name = "einvoice_erpgulf"
 authors = [
-    { name = "ERPGulf.com", email = "support@erpgulf.com"}
+    { name = "erpgulf.com", email = "support@erpgulf.com"}
 ]
-description = "E-Invoice app for ERPNext that can be adopted for any country from ERPGulf.com"
-requires-python = ">=3.14"
+description = "Peppol / provider-based e-invoicing for ERPNext by ERPGulf.com"
+requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    # "frappe~=16.0.0" # Installed and managed by bench.
+    # "frappe~=15.0.0" # Installed and managed by bench.
 ]
 
 [build-system]
@@ -18,14 +18,9 @@ build-backend = "flit_core.buildapi"
 # These dependencies are only installed when developer mode is enabled
 [tool.bench.dev-dependencies]
 # package_name = "~=1.1.0"
-
-# These apt dependencies will be installed from Ubuntu repositories when you host your app on Frappe Cloud
-[deploy.dependencies.apt]
-packages = []
-
 [tool.ruff]
 line-length = 110
-target-version = "py314"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -54,8 +49,6 @@ ignore = [
     "UP030", # Use implicit references for positional format fields (translations)
     "UP031", # Use format specifiers instead of percent format
     "UP032", # Use f-string instead of `format` call (translations)
-    "UP037", # quoted annotations
-    "UP040", # Use type aliases instead of type annotations
 ]
 typing-modules = ["frappe.types.DF"]
 
@@ -63,3 +56,6 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
+
+[tool.bench.frappe-dependencies]
+frappe = ">=14.0.0,<17.0.0"

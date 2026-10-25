@@ -1,0 +1,26 @@
+[
+ {
+  "doctype": "Custom Field",
+  "module": "E-Invoice",
+  "name": "Address-custom_governorate",
+  "dt": "Address",
+  "fieldname": "custom_governorate",
+  "label": "Governorate",
+  "fieldtype": "Select",
+  "insert_after": "state",
+  "options": "\nMuscat\nDhofar\nMusandam\nAl Buraimi\nAd Dakhiliyah\nAl Batinah North\nAl Batinah South\nAsh Sharqiyah North\nAsh Sharqiyah South\nAd Dhahirah\nAl Wusta",
+  "description": "Required on Omani addresses for e-invoicing"
+ },
+ {
+  "doctype": "Custom Field",
+  "module": "E-Invoice",
+  "name": "Company-custom_einvoice_provider",
+  "dt": "Company",
+  "fieldname": "custom_einvoice_provider",
+  "label": "Accredited Service Provider",
+  "fieldtype": "Select",
+  "insert_after": "custom_einvoice_enabled",
+  "options": "\nFlick Network L.L.C\nMarmin AI Software Design LLC\nSuntech Business Solutions DMCC",
+  "description": "Providers with an adapter are added here automatically on bench migrate"
+ }
+]

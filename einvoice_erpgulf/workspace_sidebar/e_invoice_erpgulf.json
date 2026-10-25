@@ -1,0 +1,27 @@
+{
+ "app": "einvoice_erpgulf",
+ "creation": "2026-05-14 10:17:05.113029",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Home",
+   "link_to": "E-Invoice",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-05-25 09:24:11.556714",
+ "modified_by": "Administrator",
+ "module": "E-Invoice",
+ "name": "E-Invoice ERPGulf",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "E-Invoice ERPGulf"
+}

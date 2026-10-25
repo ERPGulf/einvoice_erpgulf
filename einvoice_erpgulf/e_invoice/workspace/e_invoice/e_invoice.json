@@ -1,0 +1,140 @@
+{
+ "app": "erpnext",
+ "charts": [],
+ "content": "[{\"id\":\"Nxhp0r91R1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>E-Invoicing Dashboard &amp; Reports</b></span>\",\"col\":12}},{\"id\":\"lHwMOZy6Wb\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Detailed Dashboard\",\"col\":3}},{\"id\":\"1HX0Pt085v\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"New Sales Invoice\",\"col\":4}},{\"id\":\"_JZBBtg-WX\",\"type\":\"quick_list\",\"data\":{\"quick_list_name\":\"New Purchase Invoice\",\"col\":4}},{\"id\":\"b-O49yl_Us\",\"type\":\"card\",\"data\":{\"card_name\":\"E-Invoice Status Reports\",\"col\":5}},{\"id\":\"UOgFJ3vHbK\",\"type\":\"card\",\"data\":{\"card_name\":\"Integration\",\"col\":4}}]",
+ "creation": "2026-04-12 18:09:21.611339",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "table",
+ "idx": 0,
+ "indicator_color": "",
+ "is_hidden": 0,
+ "label": "E-Invoice",
+ "link_type": "DocType",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Integration",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Setup - Company",
+   "link_count": 0,
+   "link_to": "Company",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Status Reports",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "E-Invoice Purchase Status Report",
+   "link_count": 0,
+   "link_to": "E-Invoice Purchase Status Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "E-Invoice Sales Status Report",
+   "link_count": 0,
+   "link_to": "E-Invoice Sales Status Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Doctypes",
+   "link_count": 0,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Webhook Log",
+   "link_count": 0,
+   "link_to": "E-Invoice Webhook Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Incoming Invoice",
+   "link_count": 0,
+   "link_to": "E-Invoice Incoming Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "E-Invoice Success Log",
+   "link_count": 0,
+   "link_to": "E-Invoice Success Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-15 12:09:48.833589",
+ "modified_by": "Administrator",
+ "module": "E-Invoice",
+ "name": "E-Invoice",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "ERPNext Settings",
+ "public": 1,
+ "quick_lists": [
+  {
+   "document_type": "Sales Invoice",
+   "label": "New Sales Invoice",
+   "quick_list_filter": "[[\"Sales Invoice\",\"custom_reporting_status\",\"like\",\"%reported%\"]]"
+  },
+  {
+   "document_type": "Purchase Invoice",
+   "label": "New Purchase Invoice",
+   "quick_list_filter": "[[\"Purchase Invoice\",\"custom_reporting_status\",\"like\",\"%reported%\"]]"
+  }
+ ],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 5.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Detailed Dashboard",
+   "link_to": "e-invoice-dashboard",
+   "type": "Page"
+  }
+ ],
+ "title": "E-Invoice",
+ "type": "Workspace"
+}

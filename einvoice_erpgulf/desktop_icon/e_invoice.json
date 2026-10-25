@@ -1,0 +1,22 @@
+{
+ "app": "einvoice_erpgulf",
+ "bg_color": "blue",
+ "creation": "2026-05-14 09:44:21.304052",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_image": "",
+ "icon_type": "Link",
+ "idx": 1,
+ "label": "E-Invoice",
+ "link_to": "E-Invoice ERPGulf",
+ "link_type": "Workspace Sidebar",
+ "logo_url": "/assets/einvoice_erpgulf/images/ERPGulf.png",
+ "modified": "2026-05-25 09:12:32.265462",
+ "modified_by": "Administrator",
+ "name": "E-Invoice",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

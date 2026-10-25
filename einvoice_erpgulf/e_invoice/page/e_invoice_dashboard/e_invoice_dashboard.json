@@ -1,0 +1,19 @@
+{
+ "content": null,
+ "creation": "2026-04-17 20:04:32.914512",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-04-17 20:04:52.547682",
+ "modified_by": "Administrator",
+ "module": "E-Invoice",
+ "name": "e-invoice-dashboard",
+ "owner": "Administrator",
+ "page_name": "e-invoice-dashboard",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "E-Invoice Dashboard"
+}
