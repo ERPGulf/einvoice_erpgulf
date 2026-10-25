@@ -1,8 +1,10 @@
-# UAE E-Invoicing for ERPNext — UI Testing Guide
+# E-Invoicing for ERPNext — UI Testing Guide
 
-A step-by-step test script for implementers, QA and partners. Every test is done through the ERPNext UI (no console), with the data to enter and the result to expect. Run the whole script once per ASP you go live with, on the ASP's **sandbox**, and again after every app update. Section 9 covers testing an ASP you have just added.
+A step-by-step test script for implementers, QA and partners. Every test is done through the ERPNext UI (no console), with the data to enter and the result to expect. Run the whole script once per provider you go live with, on the provider's **sandbox**, and again after every app update. Section 9 covers testing a provider you have just added, section 10 a country you have just added.
 
-Record results in a copy of the table in section 10. Where a test says "see Error Log", open *Error Log* in the awesome bar and look at the newest entry.
+The script is written for a Company whose Country is the **United Arab Emirates** (labels *Accredited Service Provider*, *Emirate*, ribbon *FTA Reported*). For a Company in another country the screens and steps are the same; read the labels as that country's (section 10 lists what differs).
+
+Record results in a copy of the table in section 11. Where a test says "see Error Log", open *Error Log* in the awesome bar and look at the newest entry.
 
 Test data used below (adjust to what your ASP sandbox accepts):
 
@@ -136,7 +138,7 @@ Test data used below (adjust to what your ASP sandbox accepts):
 | 8.6 | Webhook with bad signature (Marmin, Suntech) | POST a dummy body to the listener URL with no signature header (e.g. from a REST client) | 401 "signature verification failed"; Error Log *… Webhook Signature Mismatch* / *Suntech Webhook Auth Failed*; no invoice changed |
 | 8.7 | Scheduler catch-up | Disable webhooks temporarily (remove the portal entry); submit; wait 6 minutes | Status still reaches *reported* via the scheduler |
 
-## 9. Testing a newly added ASP
+## 9. Testing a newly added provider (ASP / access point)
 
 Run this after a developer has added `countries/<cc>/providers/<asp>/adapter.py` and the `hooks.py` line (see the [Developer Guide](DEVELOPER_GUIDE.md)).
 
@@ -151,18 +153,39 @@ Run this after a developer has added `countries/<cc>/providers/<asp>/adapter.py`
 | 9.7 | Documents | 3.4 | XML and PDF attach (or the adapter sets `AUTO_FETCH_DOCUMENTS_ON_SUBMIT = False` and they attach after reporting) |
 | 9.8 | Webhook | 3.7, 8.6 | Listener verifies the ASP's signature; a bad signature is rejected; logs written; status updated |
 | 9.9 | Incoming import | 6.4–6.7 | `parse_incoming_invoice` produces a draft Purchase Invoice with correct supplier, lines, VAT |
-| 9.10 | Shared layer | Developer review: `grep -n "abu dhabi\|AUH\|split(\" - \")" countries/<cc>/providers/<asp>/adapter.py` | No re-declared emirate / VAT / UOM tables; the adapter imports them from `countries/ae/profile.py` |
+| 9.10 | Shared layer | Developer review: `grep -n "abu dhabi\|AUH\|split(\" - \")" countries/<cc>/providers/<asp>/adapter.py` | No re-declared region / tax-category / UOM tables; the adapter takes them from `self.profile` (or the country's `profile.py`) |
 | 9.11 | Timeouts | Developer review: `grep -c "timeout=" countries/<cc>/providers/<asp>/adapter.py` vs number of `requests.` calls | Every HTTP call has a timeout |
 | 9.12 | Regression on other ASPs | Repeat 3.2 on an existing ASP | Unchanged |
 
-## 10. Result sheet
+## 10. Testing a newly added country
 
-Copy into a spreadsheet or the project tracker; one sheet per ASP and app version.
+Run this after a developer has added `countries/<cc>/profile.py`, its `fixtures/custom_field.json`, the `einvoice_countries` line and an `einvoice_providers` block (see the [Developer Guide](DEVELOPER_GUIDE.md) section 11 and the [Country Guide](COUNTRIES.md)). Use a fresh Company whose Country is the new country; keep a UAE Company on the same site for the regression rows.
 
-| Test # | ASP | App commit | Tester | Date | Result (Pass / Fail / N/A) | Notes / Error Log title |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1.1 | | | | | | |
-| … | | | | | | |
+| # | Test | Steps | Expected |
+| --- | --- | --- | --- |
+| 10.1 | Profile resolves | Create the Company with the new Country, save | Saves. Company → E-Invoicing tab is present |
+| 10.2 | Country fields installed | `bench --site <site> migrate`, then open Address, Customer, Supplier, Sales Invoice | The country's own fields appear (e.g. *Governorate* on Address for Oman, *Buyer Reference* on Sales Invoice for Belgium); UAE-only fields (*Emirate*, FZ Beneficiary ID, RCM codes) are **not** added for that country |
+| 10.3 | Labels | Company → E-Invoicing tab | The provider field carries the country's label (*Accredited Service Provider*, *Peppol Access Point*); on a site with two countries the Company label stays the generic *E-Invoice Provider* |
+| 10.4 | Provider list per country | Company: pick a provider registered only for another country (e.g. a UAE ASP on a Belgian Company) → Save | Refused: "No adapter is registered for provider … for <country>" |
+| 10.5 | Provider accepted | Company: pick a provider registered under the new country's block → Save; Provider Settings → New → Save | Both save |
+| 10.6 | Identifier rule | Company → Tax ID set to a valid national number; submit a Sales Invoice | The payload / UBL carries the endpoint ID derived per the profile (UAE: 10-digit TIN under 0235; Belgium: 10-digit enterprise number under 0208; Oman: per the OTA constants) — check the attached `…_payload.json` or XML |
+| 10.7 | Currency decimals | Invoice with an amount such as 12.3456 | Amounts in the payload use the country's decimals (2 for AED/EUR, 3 for OMR) |
+| 10.8 | Region rule | Address of the Company's country with the region empty → submit | Blocked with "needs a recognised <country> region" when the profile requires one; accepted when it does not (Belgium) |
+| 10.9 | Tax categories | Item Tax Template / invoice Tax Category set to a label the country does not allow (e.g. *N - Margin scheme* outside the UAE) → submit | Blocked with "Invalid Tax Category … Must be one of …" listing the country's set |
+| 10.10 | National document rule | Trigger the profile's `validate_document` (Belgium: no PO No and no Buyer Reference) → submit | Blocked with the profile's message |
+| 10.11 | Ribbon wording | After submit and after status | Ribbon reads *Sent to <provider_short>* then *<authority_short> Reported* (FTA / OTA / FPS Finance), never a UAE label on a non-UAE Company |
+| 10.12 | Final statuses | Provider reports "delivered" (4-corner country) | Scheduler stops polling the invoice; ribbon shows a final state |
+| 10.13 | UBL route (if the provider takes XML) | Submit | The attached document is a UBL `Invoice` / `CreditNote` with the country's CustomizationID and ProfileID; totals consistent with the ERPNext invoice; a credit note carries `BillingReference` |
+| 10.14 | Regression on the UAE Company | Repeat 3.2 and 3.5 on the UAE Company of the same site | Unchanged: UAE labels, UAE fields, FTA ribbon |
+
+## 11. Result sheet
+
+Copy into a spreadsheet or the project tracker; one sheet per provider (and per country) and app version.
+
+| Test # | Country | Provider | App commit | Tester | Date | Result (Pass / Fail / N/A) | Notes / Error Log title |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1.1 | | | | | | | |
+| … | | | | | | | |
 
 ## Known behaviour to be aware of while testing
 

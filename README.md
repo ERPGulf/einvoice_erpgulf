@@ -20,9 +20,9 @@ Successor of `uae_erpgulf`. Existing sites move over with one command — see [M
 | Document | For whom | What it covers |
 | --- | --- | --- |
 | [End User Guide](docs/USER_GUIDE.md) | Accountants and admins | Setting up Company, Provider Settings and master data; submitting invoices; statuses and the ribbon; credit notes; purchase invoices; importing incoming invoices; dashboard, reports, logs; error messages |
-| [Testing Guide](docs/TESTING_GUIDE.md) | Implementers and QA | Step-by-step UI test script with expected results for every screen and button, plus the acceptance checklist for a newly added provider |
+| [Testing Guide](docs/TESTING_GUIDE.md) | Implementers and QA | Step-by-step UI test script (written on a UAE company) with expected results for every screen and button; acceptance checklists for a newly added provider (section 9) and a newly added country (section 10); result sheet |
 | [Developer Guide](docs/DEVELOPER_GUIDE.md) | ERPGulf developers and partners | Architecture, the adapter contract, country profiles and standards, how to add a provider, how to add a country, webhooks and status sync, rules and gotchas |
-| [Country Guide](docs/COUNTRIES.md) | Developers, partners, implementers | Country-by-country: model, standard, identifiers, tax categories, mandate status, what the profile needs and how big the port is — UAE, Oman, Belgium in detail, then Singapore, Malaysia, Australia/NZ, Japan, the Netherlands, the Nordics, Germany, France, and which countries are clearance platforms that belong in a separate app |
+| [Country Guide](docs/COUNTRIES.md) | Developers, partners, implementers | Which countries fit the app and how big each port is: full fact sheets for the UAE, Oman and Belgium; candidates on the same model (Singapore, Malaysia, Bahrain) and on Peppol with a profile (Australia/NZ, Japan, Netherlands, Nordics, Germany, France); the clearance-platform countries that stay separate apps; a ten-question checklist that yields a complete country profile |
 
 ## How it works
 

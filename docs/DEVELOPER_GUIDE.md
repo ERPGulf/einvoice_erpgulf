@@ -331,10 +331,10 @@ A country is a profile class plus one line in `hooks.py`; providers come after, 
 3. **Add country fields** in `countries/<cc>/fixtures/custom_field.json` — the region field on Address if the country has one, and any national registration fields. Re-declaring a shared field there (for example `Company-custom_einvoice_provider` with the label *Accredited Service Provider*) changes its label on sites in that country. These are installed by `bench migrate` for every country that has a Company.
 4. **Register** it: `einvoice_countries["<Country name as on Company.country>"] = "einvoice_erpgulf.countries.<cc>.profile.<Cc>Profile"` and an empty `"<CC>": {}` under `einvoice_providers`.
 5. **Providers.** Each is `countries/<cc>/providers/<name>/adapter.py`. If a UAE adapter's API is identical for the new country (the same ASP accredited in Oman), list the existing class under `"OM"` — no new code. For a provider that takes UBL XML rather than JSON (every European access point), `submit_invoice` is `xml = self.build_ubl(doc)` followed by the POST; `core/standards/ubl/builder.py` does the document from the profile.
-6. **Test** with the Testing Guide section 9 on a Company whose Country is the new one; the ribbon labels, dropdown wording and address validation should all read as that country's.
+6. **Test** with the Testing Guide section 10 (and section 9 for each of its providers) on a Company whose Country is the new one; the ribbon labels, dropdown wording and address validation should all read as that country's.
 
 **On screen:** *Company* → Country; after `bench migrate`, the country's fields appear on Address / Customer / Supplier and the Company provider field carries that country's label.
 
 ## 12. Read more
 
-`README.md` for the overview and the migration from `uae_erpgulf`, `docs/TESTING_GUIDE.md` for the test rows, `docs/USER_GUIDE.md` for what the customer sees, `core/registry.py` for how countries and providers are resolved, and `core/standards/__init__.py` for the full profile contract.
+`README.md` for the overview and the migration from `uae_erpgulf`, `docs/TESTING_GUIDE.md` for the test rows, `docs/USER_GUIDE.md` for what the customer sees, `core/registry.py` for how countries and providers are resolved, and `core/standards/__init__.py` for the full profile contract, and `docs/COUNTRIES.md` for the country-by-country facts a profile is built from.
