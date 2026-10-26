@@ -7,6 +7,8 @@ app_license = "mit"
 required_apps = ["erpnext"]
 
 
+app_include_js = "/assets/einvoice_erpgulf/js/erpgulf_credits.js"
+
 # =====================================================================
 # COUNTRIES
 # =====================================================================
@@ -92,7 +94,7 @@ doctype_js = {
         "public/js/sales_invoice.js",
         "public/js/tooltip.js",
         "public/js/badge_sales.js",
-        "public/js/erpgulf_credits.js",
+        
     ],
     "Purchase Invoice": [
         "public/js/einvoice_common.js",
