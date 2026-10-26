@@ -92,6 +92,7 @@ doctype_js = {
         "public/js/sales_invoice.js",
         "public/js/tooltip.js",
         "public/js/badge_sales.js",
+        "public/js/erpgulf_credits.js",
     ],
     "Purchase Invoice": [
         "public/js/einvoice_common.js",
