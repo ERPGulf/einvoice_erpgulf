@@ -1,0 +1,180 @@
+diff --git a/INSTALL.md b/INSTALL.md
+new file mode 100644
+index 0000000..c6245a6
+--- /dev/null
++++ b/INSTALL.md
+@@ -0,0 +1,38 @@
++# Installing einvoice_erpgulf
++
++## Fresh install
++
++```bash
++cd frappe-bench
++bench get-app https://github.com/ERPGulf/einvoice_erpgulf.git
++bench --site <site> install-app einvoice_erpgulf
++bench build --app einvoice_erpgulf
++```
++
++Install adds the shared custom fields. **Country fields** (the Emirate field for the UAE, the Governorate field for Oman, the Buyer Reference for Belgium) are installed for every country that has a Company, so after creating or changing a Company's country run:
++
++```bash
++bench --site <site> migrate
++```
++
++Updating later: `cd apps/einvoice_erpgulf && git pull`, then `bench --site <site> migrate`, `bench build --app einvoice_erpgulf`, `bench --site <site> clear-cache` and restart the workers.
++
++No Python packages beyond what Frappe already ships (`requests`, `PyJWT`). The site must be reachable from the internet on HTTPS for webhooks, and the scheduler must be enabled.
++
++## Migrating from uae_erpgulf
++
++Once, on each site that has `uae_erpgulf` installed. Data (settings, invoice fields, webhook logs, incoming invoices) is kept; the script renames the UAE-named doctypes and fields in place and hands them to the new app before the old one is uninstalled.
++
++```bash
++cd frappe-bench
++bench get-app https://github.com/ERPGulf/einvoice_erpgulf.git
++bench --site <site> set-maintenance-mode on
++bench --site <site> execute einvoice_erpgulf.migrate_from_uae_erpgulf.run
++bench --site <site> uninstall-app uae_erpgulf --no-backup --force
++bench --site <site> install-app einvoice_erpgulf
++bench build --app einvoice_erpgulf
++bench --site <site> set-maintenance-mode off
++sudo supervisorctl restart <bench-group>:*
++```
++
++Take a backup first and try it on a copy of the site. On Frappe Cloud the same steps run from the bench console. What is renamed: `UAE Incoming Invoices → E-Invoice Incoming Invoice`, `UAE E-Invoice Webhook Logs → E-Invoice Webhook Log`, `UAE E-invoicing success log → E-Invoice Success Log`; fields `custom_uae_einvoice_enabled → custom_einvoice_enabled`, `custom_accredited_service_providers → custom_einvoice_provider`, `custom_uae_einvoice_status → custom_einvoice_status`, `custom_uae_einvoice_status_notification → custom_einvoice_status_notification`, `custom_return_against_for_uae_einvoice → custom_return_against_for_einvoice`, `custom_submit_to_fta → custom_submit_to_authority`. Reports, print formats or scripts of your own that mention the old names need the same find-and-replace.
+diff --git a/README.md b/README.md
+index a6ab475..9f184c4 100644
+--- a/README.md
++++ b/README.md
+@@ -48,7 +48,7 @@ Sales / Purchase Invoice ──submit──▶ core/validation.py ──▶ core
+ 
+ ## Adding a country or a provider
+ 
+-Both are code, registered in `hooks.py`; nothing is added through the UI. The UI picks them up on `bench migrate`. Where the user sees the result is noted for each step.
++Both are code, registered in `hooks.py`; nothing is added through the UI. The UI picks them up on the next site migrate. Where the user sees the result is noted for each step.
+ 
+ ### Where the country is set
+ 
+@@ -90,40 +90,7 @@ The app has no country field of its own. It reads the standard ERPNext field **C
+ 
+ ## Installation
+ 
+-```bash
+-cd frappe-bench
+-bench get-app https://github.com/ERPGulf/einvoice_erpgulf.git
+-bench --site <site> install-app einvoice_erpgulf
+-bench build --app einvoice_erpgulf
+-```
+-
+-Install adds the shared custom fields. **Country fields** (the Emirate field for the UAE, the Governorate field for Oman, the Buyer Reference for Belgium) are installed for every country that has a Company, so after creating or changing a Company's country run:
+-
+-```bash
+-bench --site <site> migrate
+-```
+-
+-Updating later: `cd apps/einvoice_erpgulf && git pull`, then `bench --site <site> migrate`, `bench build --app einvoice_erpgulf`, `bench --site <site> clear-cache` and restart the workers.
+-
+-No Python packages beyond what Frappe already ships (`requests`, `PyJWT`). The site must be reachable from the internet on HTTPS for webhooks, and the scheduler must be enabled.
+-
+-## Migrating from uae_erpgulf
+-
+-Once, on each site that has `uae_erpgulf` installed. Data (settings, invoice fields, webhook logs, incoming invoices) is kept; the script renames the UAE-named doctypes and fields in place and hands them to the new app before the old one is uninstalled.
+-
+-```bash
+-cd frappe-bench
+-bench get-app https://github.com/ERPGulf/einvoice_erpgulf.git
+-bench --site <site> set-maintenance-mode on
+-bench --site <site> execute einvoice_erpgulf.migrate_from_uae_erpgulf.run
+-bench --site <site> uninstall-app uae_erpgulf --no-backup --force
+-bench --site <site> install-app einvoice_erpgulf
+-bench build --app einvoice_erpgulf
+-bench --site <site> set-maintenance-mode off
+-sudo supervisorctl restart <bench-group>:*
+-```
+-
+-Take a backup first and try it on a copy of the site. On Frappe Cloud the same steps run from the bench console. What is renamed: `UAE Incoming Invoices → E-Invoice Incoming Invoice`, `UAE E-Invoice Webhook Logs → E-Invoice Webhook Log`, `UAE E-invoicing success log → E-Invoice Success Log`; fields `custom_uae_einvoice_enabled → custom_einvoice_enabled`, `custom_accredited_service_providers → custom_einvoice_provider`, `custom_uae_einvoice_status → custom_einvoice_status`, `custom_uae_einvoice_status_notification → custom_einvoice_status_notification`, `custom_return_against_for_uae_einvoice → custom_return_against_for_einvoice`, `custom_submit_to_fta → custom_submit_to_authority`. Reports, print formats or scripts of your own that mention the old names need the same find-and-replace.
++See [INSTALL.md](https://github.com/ERPGulf/einvoice_erpgulf/blob/main/INSTALL.md) for installing, updating and migrating from `uae_erpgulf`.
+ 
+ ## Quick start (five minutes to a first submission)
+ 
+diff --git a/einvoice_erpgulf/core/setup.py b/einvoice_erpgulf/core/setup.py
+index 9427588..0e0b8d8 100644
+--- a/einvoice_erpgulf/core/setup.py
++++ b/einvoice_erpgulf/core/setup.py
+@@ -9,7 +9,6 @@
+ 3. Provider dropdowns are extended with every registered adapter name.
+ """
+ 
+-import json
+ import os
+ 
+ import frappe
+@@ -39,8 +38,7 @@ def sync_country_fields(countries=None):
+ 		path = _country_fixture_path(profile)
+ 		if not os.path.exists(path):
+ 			continue
+-		with open(path, encoding="utf-8") as f:
+-			entries = json.load(f)
++		entries = frappe.get_file_json(path)
+ 		fields = {}
+ 		for entry in entries:
+ 			# On a multi-country site the Company-level labels stay generic.
+diff --git a/einvoice_erpgulf/countries/ae/providers/marmin/adapter.py b/einvoice_erpgulf/countries/ae/providers/marmin/adapter.py
+index 62ecff3..d375de0 100644
+--- a/einvoice_erpgulf/countries/ae/providers/marmin/adapter.py
++++ b/einvoice_erpgulf/countries/ae/providers/marmin/adapter.py
+@@ -358,26 +358,28 @@ class MarminAdapter(BaseAdapter):
+ 
+         frappe.throw(_("Marmin API Error: {0}").format(response.text))
+ 
+-   
+-    _WEBHOOK_NOT_AN_API_MESSAGE = _(
+-        "Marmin doesn't have a webhook subscription API - it's configured only "
+-        "in the Marmin Web Application (Developer Dashboard > Webhooks tab), "
+-        "gated by an OTP sent to your email. To set it up: paste this row's "
+-        "Webhook URL into that dashboard as the endpoint, then Reveal/Regenerate "
+-        "the Webhook Signing Secret there and paste it into this row's Webhook "
+-        "Secret field. There's nothing to click here for that - Subscribe "
+-        "Webhook / Get Subscription / Webhook Logs only exist for providers "
+-        "(like Flick) that expose an actual API for it."
+-    ) # nosemgrep: frappe-semgrep-rules.rules.frappe-breaks-multitenancy
++
++    @staticmethod
++    def _webhook_not_an_api_message():
++        return _(
++            "Marmin doesn't have a webhook subscription API - it's configured only "
++            "in the Marmin Web Application (Developer Dashboard > Webhooks tab), "
++            "gated by an OTP sent to your email. To set it up: paste this row's "
++            "Webhook URL into that dashboard as the endpoint, then Reveal/Regenerate "
++            "the Webhook Signing Secret there and paste it into this row's Webhook "
++            "Secret field. There's nothing to click here for that - Subscribe "
++            "Webhook / Get Subscription / Webhook Logs only exist for providers "
++            "(like Flick) that expose an actual API for it."
++        )
+ 
+     def register_webhook(self):
+-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
++        frappe.throw(self._webhook_not_an_api_message())
+ 
+     def get_subscription(self):
+-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
++        frappe.throw(self._webhook_not_an_api_message())
+ 
+     def get_webhook_deliveries(self):
+-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
++        frappe.throw(self._webhook_not_an_api_message())
+ 
+     def get_webhook_listener_url(self):
+         """The URL to paste into Marmin's Developer Dashboard > Webhooks"""
+diff --git a/einvoice_erpgulf/migrate_from_uae_erpgulf.py b/einvoice_erpgulf/migrate_from_uae_erpgulf.py
+index fc0a44c..44ae668 100644
+--- a/einvoice_erpgulf/migrate_from_uae_erpgulf.py
++++ b/einvoice_erpgulf/migrate_from_uae_erpgulf.py
+@@ -134,5 +134,6 @@ def _desk_objects():
+ 	# anything else still owned by the old module (e.g. a custom report) follows along
+ 	for doctype in ("Page", "Report", "Workspace", "Print Format", "Server Script", "Client Script"):
+ 		if frappe.db.table_exists(doctype) and frappe.get_meta(doctype).has_field("module"):
+-			frappe.db.sql(f"update `tab{doctype}` set module=%s where module=%s", (NEW_MODULE, OLD_MODULE))
++			table = frappe.qb.DocType(doctype)
++			frappe.qb.update(table).set(table.module, NEW_MODULE).where(table.module == OLD_MODULE).run()
+ 	print("Desk objects moved to module", NEW_MODULE)
