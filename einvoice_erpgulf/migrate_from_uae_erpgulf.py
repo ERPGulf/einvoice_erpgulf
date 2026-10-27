@@ -134,5 +134,6 @@ def _desk_objects():
 	# anything else still owned by the old module (e.g. a custom report) follows along
 	for doctype in ("Page", "Report", "Workspace", "Print Format", "Server Script", "Client Script"):
 		if frappe.db.table_exists(doctype) and frappe.get_meta(doctype).has_field("module"):
-			frappe.db.sql(f"update `tab{doctype}` set module=%s where module=%s", (NEW_MODULE, OLD_MODULE))
+			for name in frappe.get_all(doctype, filters={"module": OLD_MODULE}, pluck="name"):
+				frappe.db.set_value(doctype, name, "module", NEW_MODULE, update_modified=False)
 	print("Desk objects moved to module", NEW_MODULE)

@@ -46,7 +46,7 @@ def send_invoice_to_provider(doc, method=None):
 from typing import Optional, Union
 from frappe.model.document import Document
 import time
-@frappe.whitelist(allow_guest=False)
+@frappe.whitelist(allow_guest=False, methods=["POST"])
 def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] = None):
     """
     Store Success/Failed in custom_einvoice_status
@@ -182,7 +182,7 @@ def bulk_send_invoices(invoices: list | str):
 
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_document_status(invoice_name: str):
     """Fetch document status from this company's active provider and save
     the response in the Purchase Invoice."""

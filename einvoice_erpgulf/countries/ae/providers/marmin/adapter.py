@@ -359,7 +359,9 @@ class MarminAdapter(BaseAdapter):
         frappe.throw(_("Marmin API Error: {0}").format(response.text))
 
    
-    _WEBHOOK_NOT_AN_API_MESSAGE = _(
+    @staticmethod
+    def _webhook_not_an_api_message():
+        return _(
         "Marmin doesn't have a webhook subscription API - it's configured only "
         "in the Marmin Web Application (Developer Dashboard > Webhooks tab), "
         "gated by an OTP sent to your email. To set it up: paste this row's "
@@ -368,16 +370,16 @@ class MarminAdapter(BaseAdapter):
         "Secret field. There's nothing to click here for that - Subscribe "
         "Webhook / Get Subscription / Webhook Logs only exist for providers "
         "(like Flick) that expose an actual API for it."
-    ) # nosemgrep: frappe-semgrep-rules.rules.frappe-breaks-multitenancy
+        )
 
     def register_webhook(self):
-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
+        frappe.throw(self._webhook_not_an_api_message())
 
     def get_subscription(self):
-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
+        frappe.throw(self._webhook_not_an_api_message())
 
     def get_webhook_deliveries(self):
-        frappe.throw(self._WEBHOOK_NOT_AN_API_MESSAGE)
+        frappe.throw(self._webhook_not_an_api_message())
 
     def get_webhook_listener_url(self):
         """The URL to paste into Marmin's Developer Dashboard > Webhooks"""
@@ -1177,7 +1179,7 @@ def _verify_marmin_webhook_signature(raw_body, received_signature, webhook_secre
     return hmac.compare_digest(expected_signature, received_signature)
 
 
-@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def marmin_webhook_listener():
     """Listener for Marmin's webhook events - the URL
     get_webhook_listener_url() above hands you to paste into the Marmin

@@ -101,7 +101,7 @@ def country_code_of(company):
 
 
 @frappe.whitelist()
-def get_ui_labels(company):
+def get_ui_labels(company: str):
 	"""Labels the forms need (authority short name, provider wording)."""
 	try:
 		return get_profile(company).ui_labels()
@@ -111,7 +111,7 @@ def get_ui_labels(company):
 
 # ---------------------------------------------------------------- providers
 @frappe.whitelist()
-def registered_providers(country=None):
+def registered_providers(country: str | None = None):
 	"""Provider names with an adapter. With ``country`` (code or Company
 	country name) only that country's; otherwise every registered name."""
 	providers = _providers()

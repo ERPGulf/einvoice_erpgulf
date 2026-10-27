@@ -47,7 +47,7 @@ def send_invoice_to_provider(doc, method=None):
 
 from typing import Optional, Union
 from frappe.model.document import Document
-@frappe.whitelist(allow_guest=False)
+@frappe.whitelist(allow_guest=False, methods=["POST"])
 def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] = None):
     """ Store Success/Failed in custom_einvoice_status """
     if isinstance(doc, str):

@@ -67,7 +67,7 @@ get_flick_access_token = get_access_token
 get_valid_flick_token = get_valid_token
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_document_status(invoice_name: str):
 	"""Fetch document status from this company's active provider."""
 	try:

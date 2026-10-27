@@ -7,7 +7,7 @@ from einvoice_erpgulf.core.registry import get_adapter
 from frappe.utils.file_manager import save_file
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_document_xml(doctype: str, invoice_name: str):
     """Fetch the submitted document's XML from whichever ASP this company
     is active on, and save it against the Invoice."""
@@ -54,7 +54,7 @@ def get_document_xml(doctype: str, invoice_name: str):
         frappe.throw(_("Failed to fetch document XML: {0}").format(str(e)))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_document_pdf(doctype: str, invoice_name: str):
     """Fetch the submitted document's PDF from whichever ASP this company
     is active on, and save it against the Invoice."""

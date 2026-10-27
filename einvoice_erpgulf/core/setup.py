@@ -39,7 +39,7 @@ def sync_country_fields(countries=None):
 		path = _country_fixture_path(profile)
 		if not os.path.exists(path):
 			continue
-		with open(path, encoding="utf-8") as f:
+		with open(path, encoding="utf-8") as f:  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
 			entries = json.load(f)
 		fields = {}
 		for entry in entries:

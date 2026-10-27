@@ -413,7 +413,7 @@ class FlickAdapter(BaseAdapter):
         }
 
 
-@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def flick_webhook_listener():
     """Listener for Flick API webhooks. Logs incoming data and updates invoice status."""
     try:
