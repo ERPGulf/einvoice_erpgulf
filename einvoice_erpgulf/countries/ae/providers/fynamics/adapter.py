@@ -34,6 +34,7 @@ SUCCESS_WORDS = ("SUCCESS", "SUCCESSFUL", "DELIVERED", "ACCEPTED", "REPORTED", "
 FAILED_WORDS = ("FAILED", "FAILURE", "ERROR", "REJECTED", "INVALID")
 PENDING_WORDS = ("QUEUED", "PROCESSING", "PENDING", "IN_PROGRESS", "SUBMITTED", "RECEIVED")
 
+
 # Fynamics wants H87 (not EA) for piece-type units.
 UOM_TO_UNECE = uom_to_unece_table(piece_code="H87")
 
