@@ -18,7 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        branch: [version-15, version-16]
+        include:
+          - branch: version-15
+            python: "3.11"
+          - branch: version-16
+            python: "3.12"
 
     services:
       mariadb:
@@ -38,7 +42,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
