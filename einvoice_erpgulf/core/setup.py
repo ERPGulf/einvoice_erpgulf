@@ -9,7 +9,6 @@
 3. Provider dropdowns are extended with every registered adapter name.
 """
 
-import json
 import os
 
 import frappe
@@ -39,8 +38,7 @@ def sync_country_fields(countries=None):
 		path = _country_fixture_path(profile)
 		if not os.path.exists(path):
 			continue
-		with open(path, encoding="utf-8") as f:  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-			entries = json.load(f)
+		entries = frappe.get_file_json(path)
 		fields = {}
 		for entry in entries:
 			# On a multi-country site the Company-level labels stay generic.
