@@ -192,6 +192,8 @@ class BaseAdapter:
 
     def get_subscription(self):
         self._not_supported("Webhook subscription details")
+    def delete_webhook(self, uuid=None):
+        self._not_supported("Webhook deletion")
 
     def get_webhook_deliveries(self):
         self._not_supported("Webhook delivery log")

@@ -360,6 +360,28 @@ class FlickAdapter(BaseAdapter):
         except Exception:
             return {"raw_response": response.text}
 
+    def delete_webhook(self, uuid=None):
+        """DELETE /v1/webhooks/subscriptions/{uuid}. Defaults to this row's own subscription."""
+        settings = self.settings
+        uuid = uuid or settings.webhook_uuid
+        if not uuid:
+            frappe.throw(_("Webhook UUID not found."))
+
+        url = f"{self.get_base_url()}/v1/webhooks/subscriptions/{uuid}"
+        response = requests.delete(url, headers=self.get_auth_headers())
+
+        try:
+            data = response.json()
+        except Exception:
+            data = {"raw_response": response.text}
+
+        if response.status_code in (200, 202, 204) and uuid == settings.webhook_uuid:
+            settings.webhook_uuid = None
+            settings.webhook_secret = None
+            settings.save(ignore_permissions=True)
+
+        return {"http_status": response.status_code, "response": data}
+        
     def get_webhook_deliveries(self):
         settings = self.settings
         base_url = self.get_base_url()

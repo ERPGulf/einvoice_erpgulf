@@ -4,11 +4,13 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from frappe import _
+from frappe.utils import flt, getdate
 from einvoice_erpgulf.core.codes import country_code_mapping
 # Shared PINT-AE code tables live in providers/pint.py.
 from einvoice_erpgulf.countries.ae.profile import (
     emirate_code as get_uae_emirate_code,
     vat_category_code as get_vat_category_code,
+    LEGAL_REGISTRATION_TYPES,
 )
 import json
 from datetime import timedelta
@@ -189,27 +191,24 @@ def get_invoice_type_code(sales_invoice_doc):
         return "361"
     
     return "389"
+  
+
 
 def get_due_date(sales_invoice_doc, issue_date):
     """
-    IBT-009 / ibr-127-ae compliant due date resolver
+    IBT-009 / ibr-127-ae: send due date whenever amount due > 0.
+    Only credit notes skip it. Flick still demands it for deemed supply,
+    so it's sent there too (sending it is never invalid).
     """
     if sales_invoice_doc.is_return == 1:
         return None
-   
-    if getattr(sales_invoice_doc, "custom_invoice_transaction_type_code", None) == "X1XXXXX : Deemed supply transaction":
+    if flt(sales_invoice_doc.grand_total) <= 0:
         return None
-    if sales_invoice_doc.outstanding_amount > 0:
-        if not sales_invoice_doc.due_date:
-            frappe.throw(_(
-                "Payment Due Date (IBT-009) is mandatory when Outstanding Amount > 0"
-            ))
-        if sales_invoice_doc.due_date < issue_date:
-            frappe.throw(_(
-                "Payment Due Date must be equal to or after the Issue Date"
-            ))
-        return sales_invoice_doc.due_date.strftime("%Y-%m-%d")
-    return None
+    issue_date = getdate(issue_date)
+    due_date = getdate(sales_invoice_doc.due_date) if sales_invoice_doc.due_date else issue_date
+    if due_date < issue_date:
+        frappe.throw(_("Payment Due Date must be equal to or after the Issue Date"))
+    return due_date.strftime("%Y-%m-%d")
 
 def get_invoice_period(sales_invoice_doc):
     """
@@ -352,30 +351,30 @@ def validate_receiving_party_fields(
 
 
     if not customer_doc.supplier_name:
-        errors.append("IBR-007: Legal name (IBT-044) MUST be provided")
+        errors.append("IBR-007: Legal name (IBT-044) MUST be provided in customer master")
     if not address_data.address_line1:
-        errors.append("IBR-144-ae: Address line 1 (IBT-050) MUST be provided")
+        errors.append("IBR-144-ae: Address line 1 (IBT-050) MUST be provided in customer address")
     if not address_data.city:
-        errors.append("IBR-144-ae: City (IBT-052) MUST be provided")
+        errors.append("IBR-144-ae: City (IBT-052) MUST be provided in customer address")
     if not address_data.emirate:
-        errors.append("IBR-144-ae: Country subdivision / Emirate (IBT-054) MUST be provided")
+        errors.append("IBR-144-ae: Country subdivision / Emirate (IBT-054) MUST be provided in customer address")
     if not address_data.pincode:
-        errors.append("postal zone MUST be provided")
+        errors.append("IBR-144-ae: Postal zone (IBT-056) MUST be provided in customer address")
     if not address_data.country:
-        errors.append("IBR-008: Country code (IBT-055) MUST be provided")
+        errors.append("IBR-008: Country code (IBT-055) MUST be provided in customer address")
     if not address_data.email_id:
-        errors.append("IBR-011: Electronic email id (IBT-049) MUST be provided")
+        errors.append("IBR-011: Electronic email id (IBT-049) MUST be provided in customer address")
     if is_credit_note :
         if not customer_doc.custom_trade_license_number:
             errors.append(
                 "IBR-136-ae: Legal registration identifier (IBT-047) "
-                "MUST be present for Credit Note or Out of Scope invoice"
+                "MUST be present for Credit Note or Out of Scope invoice in customer master"
             )
     if transaction_type_code != "XXXXXXX1":  # Not export
         if not customer_doc.tax_id and not customer_doc.custom_trade_license_number:
             errors.append(
                 "IBR-135-ae: Either VAT identifier (IBT-048) "
-                "or legal identifier (IBT-046) MUST be present"
+                "or legal identifier (IBT-046) MUST be present in customer master"
             )
 
     # for item in items:
@@ -390,7 +389,7 @@ def validate_receiving_party_fields(
         if not customer_doc.custom_fz_beneficiary_id:
             errors.append(
                 "IBR-007-ae: FZ Beneficiary ID (BTAE-01) MUST be provided "
-                "for Free Trade Zone transaction"
+                "for Free Trade Zone transaction in customer master"
             )
     if errors:
         frappe.throw("<br>".join(errors))
@@ -446,13 +445,15 @@ def get_item_data(sales_invoice_doc, vat_rate):
             commodity_code = "B"
 
         # Amounts
-        net = Decimal(item.amount)
+        net = Decimal(str(item.net_amount))   # excl. VAT: same as amount when exclusive, VAT removed when inclusive
         total_net += net
 
         # Determine VAT category and percentage
         if item.item_tax_template:
             item_tax_template = frappe.get_doc("Item Tax Template", item.item_tax_template)
-            vat_category = item_tax_template.custom_vat_category or sales_invoice_doc.custom_vat_category
+            vat_category = item_tax_template.custom_vat_category
+            if not vat_category:
+                frappe.throw(_("Set VAT Category on Item Tax Template {0}").format(item.item_tax_template))
             if item_tax_template.taxes:
                 tax_rate = item_tax_template.taxes[0].tax_rate
             else:
@@ -481,7 +482,7 @@ def get_item_data(sales_invoice_doc, vat_rate):
             "note": "Please check the invoice",
             "invoiced_quantity": str(item.qty),
             "uom": item.uom,
-            "line_extension_amount": get_item_line_extension_amount(item),
+            "line_extension_amount": str(r2(net)),
             "accounting_cost": item.cost_center,
             "name": item.item_name,
             "description": item.description,
@@ -490,7 +491,7 @@ def get_item_data(sales_invoice_doc, vat_rate):
             "sac_code": sac_code,
             "vat_category": get_vat_category_code(vat_category),
             "vat_percentage": r2(tax_rate),
-            "unit_price": r2(item.rate),
+            "unit_price": r2(item.net_rate),
             "base_quantity": "1"
             # "line_extension_amount": get_item_line_extension_amount(item)
         }
@@ -743,10 +744,11 @@ def build_uae_invoice_json(invoice_number):
         country_code1 = country_dict[address_data.country.lower()]
     else:
         country_code1 = "AE" 
-    line_extension_amount = get_line_extension_amount(sales_invoice_doc)  
-    tax_exclusive_amount = get_tax_exc(sales_invoice_doc)
-    tax_inclusive_amount = get_tax_inclusive(sales_invoice_doc)
-    payable_amount = get_payable_amount(sales_invoice_doc)
+    # legal_monetary_total straight from ERPNext's own totals
+    line_extension_amount = r2(sales_invoice_doc.net_total + (sales_invoice_doc.discount_amount or 0))
+    tax_exclusive_amount = r2(sales_invoice_doc.net_total)
+    tax_inclusive_amount = r2(sales_invoice_doc.grand_total)
+    payable_amount = float(r2(sales_invoice_doc.grand_total))
  
     payable_amount_float = float(payable_amount)
     tax_inclusive_amount_float = float(tax_inclusive_amount)
@@ -779,17 +781,15 @@ def build_uae_invoice_json(invoice_number):
                 "contact_telephone": address_data.phone ,
                 "contact_email": address_data.email_id,
     }
-    if customer_doc.get("custom_legal_registration_identifier_type") == "Commercial/Trade license":
+    reg_type = customer_doc.get("custom_legal_registration_identifier_type")
+    if reg_type:
         if not customer_doc.custom_trade_license_number:
-            frappe.throw(_(
-                "custom_trade_license_number is mandatory when legal registartion is  "
-                "Commercial/Trade license"
-                
-            ))
+            frappe.throw(_("Legal Registration Number is mandatory when Legal Registration Identifier Type is {0}").format(reg_type))
         receiving_party["identifiers"] = [{
-            "type": "TL",
+            "type": LEGAL_REGISTRATION_TYPES.get(reg_type, "TL"),
             "value": customer_doc.custom_trade_license_number,
         }]
+
     if is_ftz:
         if not customer_doc.custom_fz_beneficiary_id:
             frappe.throw(_(
@@ -900,7 +900,7 @@ def build_uae_invoice_json(invoice_number):
 
     invoice["invoice_totals"] = {
         "line_extension_amount": r2(total_net),
-        "tax_exclusive_amount": r2(total_net - Decimal(sales_invoice_doc.discount_amount or 0)),
+        "tax_exclusive_amount": r2(total_net),
         "tax_inclusive_amount": r2(total_net + total_tax),
         "allowance_total_amount": r2(abs(Decimal(sales_invoice_doc.discount_amount or 0))),
         "payable_amount": r2(total_net + total_tax),

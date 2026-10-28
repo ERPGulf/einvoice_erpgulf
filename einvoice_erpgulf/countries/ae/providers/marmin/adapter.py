@@ -1087,7 +1087,7 @@ class MarminAdapter(BaseAdapter):
             "quantity": item.qty,
             "unit_code": self._unit_code(item.uom),
             "price": {
-                "base_amount": item.rate,
+                "base_amount": item.net_rate,
                 "base_quantity": 1,
             },
             "classified_tax_category": classified_tax_category,

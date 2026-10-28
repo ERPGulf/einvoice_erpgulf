@@ -82,6 +82,25 @@ frappe.ui.form.on("E-Invoice Provider Settings", {
                 }
             });
         }, __("E-Invoicing"));
+        frm.add_custom_button(__("Delete Webhook"), function () {
+            frappe.prompt(
+                { fieldname: "uuid", fieldtype: "Data", label: __("Subscription UUID"), default: frm.doc.webhook_uuid, reqd: 1 },
+                (v) => {
+                    frappe.call({
+                        method: "einvoice_erpgulf.core.webhook.delete_webhook",
+                        args: { company: frm.doc.company, provider_settings: frm.doc.name, uuid: v.uuid },
+                        freeze: true,
+                        freeze_message: __("Deleting Webhook..."),
+                        callback: function (r) {
+                            show_json("Webhook Deleted", r.message);
+                            frm.reload_doc();
+                        }
+                    });
+                },
+                __("Delete Webhook Subscription"),
+                __("Delete")
+            );
+        }, __("E-Invoicing"));
 
         frm.add_custom_button(__("Webhook Logs"), function () {
             if (!frm.doc.webhook_uuid) {

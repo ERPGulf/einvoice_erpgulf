@@ -49,6 +49,14 @@ def custom_get_subscription(company: str = None, provider_settings: str = None):
     return result
 
 
+
+@frappe.whitelist()
+def delete_webhook(company: str = None, provider_settings: str = None, uuid: str = None):
+    """Delete a webhook subscription (this row's own, or the given UUID)"""
+    settings = get_settings_for_action(company, provider_settings)
+    return get_adapter(settings).delete_webhook(uuid)
+
+    
 @frappe.whitelist()
 def get_webhook_deliveries(company: str = None, provider_settings: str = None):
     """Get the current webhook delivery logs for this provider"""

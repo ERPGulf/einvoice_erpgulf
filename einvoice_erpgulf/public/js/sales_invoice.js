@@ -69,43 +69,29 @@ frappe.ui.form.on("Sales Invoice", {
                                     ? primary.data
                                     : {};
 
-                                const findKeyLike = (obj, patterns) => {
-                                    if (!obj || typeof obj !== "object") return undefined;
-                                    const keys = Object.keys(obj);
-                                    for (const p of patterns) {
-                                        for (const key of keys) {
-                                            if (p.test(key)) {
-                                                const value = obj[key];
-                                                if (value !== undefined && value !== null && value !== "") {
-                                                    return value;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    return undefined;
-                                };
+                                const documentId = nested.id ?? primary.id ?? "-";
 
-                                const documentId =
-                                    findKeyLike(primary, [/^id$/i]) ??
-                                    findKeyLike(nested, [/^id$/i]) ??
-                                    "-";
-                                const status =
-                                    findKeyLike(primary, [/status/i]) ??
-                                    findKeyLike(nested, [/status/i]) ??
-                                    "-";
+                                // API call result, shown as before (e.g. "success")
+                                const status = primary.status ?? nested.status ?? "-";
+
+                                // Normalised by each ASP's adapter on the server: pending / reported / rejected / failed
+                                const reportingStatus =
+                                    envelope.reporting_status ?? nested.reporting_status ?? primary.reporting_status ?? "-";
+                                const reporting = String(reportingStatus).toLowerCase();
 
                                 const rawJson = frappe.utils.escape_html(JSON.stringify(res, null, 2));
 
                                 const isHttpSuccess =
                                     typeof httpStatus === "number" && httpStatus >= 200 && httpStatus < 300;
-                                const indicator = !isHttpSuccess
+                                const indicator = !isHttpSuccess || ["rejected", "failed"].includes(reporting)
                                     ? "red"
-                                    : (status === "reported" ? "green" : "orange");
+                                    : (reporting === "reported" ? "green" : "orange");
 
                                 const html = `
                                     <p><b>HTTP Status:</b> ${frappe.utils.escape_html(String(httpStatus ?? "-"))}</p>
                                     <p><b>Document ID:</b> ${frappe.utils.escape_html(String(documentId))}</p>
                                     <p><b>Status:</b> ${frappe.utils.escape_html(String(status))}</p>
+                                    <p><b>Reporting Status:</b> ${frappe.utils.escape_html(String(reportingStatus))}</p>
                                     <p style="margin-top:12px;"><b>Response</b></p>
                                     <pre style="white-space:pre-wrap;background:#f6f8fa;padding:12px;border-radius:6px;max-height:400px;overflow:auto;font-size:12px;">${rawJson}</pre>
                                 `;
@@ -152,9 +138,6 @@ frappe.ui.form.on("Sales Invoice", {
                                 frm.reload_doc();
                             }
                         }
-                        // No custom error handling on purpose - attach.py throws
-                        // the actual ASP reason, and frappe.call's default error
-                        // dialog shows it.
                     });
                 }, __('Get Document'));
             }
