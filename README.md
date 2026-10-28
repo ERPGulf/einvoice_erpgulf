@@ -1,6 +1,6 @@
 # E-Invoicing for ERPNext (einvoice_erpgulf)
 
-A Frappe / ERPNext app for every country where e-invoices go out through a **provider the taxpayer chooses** — a Peppol access point, an accredited service provider, a certified platform. It submits Sales and Purchase Invoices through that provider, tracks their status with the tax authority, stores the returned XML and PDF against the invoice, receives webhooks, and imports incoming supplier invoices.
+A Frappe / ERPNext open source app for every country where e-invoices go out through a **provider the taxpayer chooses** — a Peppol access point, an accredited service provider, a certified platform. It submits Sales and Purchase Invoices through that provider, tracks their status with the tax authority, stores the returned XML and PDF against the invoice, receives webhooks, and imports incoming supplier invoices.
 
 One app, one folder per country, one folder per provider under it. The common code never names a country or a provider: the Company's **Country** selects the country profile (the rulebook: identifier scheme, tax categories, region codes, decimals, customization IDs), the Company's **E-Invoice Provider** selects the adapter. Adding a country is one `profile.py`; adding a provider is one `adapter.py` plus one line in `hooks.py`.
 
