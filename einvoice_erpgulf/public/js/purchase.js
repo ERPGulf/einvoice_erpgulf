@@ -7,7 +7,7 @@ frappe.ui.form.on("Purchase Invoice", {
             frm.doc.docstatus === 1 &&
             (
                 frm.doc.custom_einvoice_status === "Not Submitted" ||
-                frm.doc.custom_reporting_status === "failed"
+                ["failed", "rejected"].includes((frm.doc.custom_reporting_status || "").toLowerCase())
             )
         ) {
 
@@ -41,7 +41,9 @@ frappe.ui.form.on("Purchase Invoice", {
         if (!frm.doc.__islocal && frm.doc.custom_einvoice_status !== "Not Submitted") {
 
             // Hide Get Document Status once reported
-            const is_reported = (frm.doc.custom_reporting_status || "").toLowerCase() === "reported";
+            const is_reported = ["reported", "rejected"].includes(
+                (frm.doc.custom_reporting_status || "").toLowerCase()
+            );
 
             if (!is_reported) {
                 frm.add_custom_button(__('Get Document Status'), function () {
@@ -92,23 +94,27 @@ frappe.ui.form.on("Purchase Invoice", {
                                     findKeyLike(primary, [/^id$/i]) ??
                                     findKeyLike(nested, [/^id$/i]) ??
                                     "-";
-                                const status =
-                                    findKeyLike(primary, [/status/i]) ??
-                                    findKeyLike(nested, [/status/i]) ??
-                                    "-";
+                                const status = primary.status ?? nested.status ?? "-";
+
+                                const STATUS_TEXT = { 1: "pending", 2: "reported", 3: "rejected", 4: "failed" };
+                                const reportingStatus =
+                                    envelope.reporting_status ?? nested.reporting_status ?? primary.reporting_status ??
+                                    STATUS_TEXT[primary.status] ?? frm.doc.custom_reporting_status ?? "-";
+                                const reporting = String(reportingStatus).toLowerCase();
 
                                 const rawJson = frappe.utils.escape_html(JSON.stringify(res, null, 2));
 
                                 const isHttpSuccess =
                                     typeof httpStatus === "number" && httpStatus >= 200 && httpStatus < 300;
-                                const indicator = !isHttpSuccess
+                                const indicator = !isHttpSuccess || ["rejected", "failed"].includes(reporting)
                                     ? "red"
-                                    : (status === "reported" ? "green" : "orange");
+                                    : (reporting === "reported" ? "green" : "orange");
 
                                 const html = `
                                     <p><b>HTTP Status:</b> ${frappe.utils.escape_html(String(httpStatus ?? "-"))}</p>
                                     <p><b>Document ID:</b> ${frappe.utils.escape_html(String(documentId))}</p>
                                     <p><b>Status:</b> ${frappe.utils.escape_html(String(status))}</p>
+                                    <p><b>Reporting Status:</b> ${frappe.utils.escape_html(String(reportingStatus))}</p>
                                     <p style="margin-top:12px;"><b>Response</b></p>
                                     <pre style="white-space:pre-wrap;background:#f6f8fa;padding:12px;border-radius:6px;max-height:400px;overflow:auto;font-size:12px;">${rawJson}</pre>
                                 `;
@@ -129,13 +135,14 @@ frappe.ui.form.on("Purchase Invoice", {
 
             // Hide XML / PDF buttons if already attached
             const attachments = (frm.get_docinfo() && frm.get_docinfo().attachments) || [];
+            const is_rejected = (frm.doc.custom_reporting_status || "").toLowerCase() === "rejected";
             const has_ext = (ext) => attachments.some(a =>
                 ((a.file_name || a.file_url || "").toLowerCase()).endsWith(ext)
             );
             const has_xml = has_ext(".xml");
             const has_pdf = has_ext(".pdf");
 
-            if (!has_xml) {
+            if (!has_xml && !is_rejected) {
                 frm.add_custom_button(__('XML'), function () {
                     frappe.call({
                         method: "einvoice_erpgulf.core.attach.get_document_xml",
@@ -159,7 +166,7 @@ frappe.ui.form.on("Purchase Invoice", {
                 }, __('Get Document'));
             }
 
-            if (!has_pdf) {
+            if (!has_pdf && !is_rejected) {
                 frm.add_custom_button(__('PDF'), function () {
                     frappe.call({
                         method: "einvoice_erpgulf.core.attach.get_document_pdf",

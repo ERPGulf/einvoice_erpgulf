@@ -39,7 +39,12 @@ class FlickAdapter(BaseAdapter):
         base_url = self.get_base_url()
         client_id = settings.client_id
         client_secret = settings.get_password("client_secret")
-
+        if settings.auth_type == "api_key":
+            frappe.throw(
+                _("{0} uses API Key auth, so no access token is needed. "
+                  "Use Get Participant Details or Verify Token to test.").format(settings.name),
+                title=_("No Token for API Key"),
+            )
         if not base_url or not client_id or not client_secret:
             frappe.throw(
                 _("Please enter Base URL, Client ID and Client Secret on E-Invoice Provider Settings.")
@@ -51,8 +56,25 @@ class FlickAdapter(BaseAdapter):
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
-        response.raise_for_status()
+        # response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+        # response.raise_for_status()
+
+        try:
+            response = requests.post(url, data=payload, timeout=30)
+        except requests.exceptions.RequestException as e:
+            frappe.throw(_("Could not reach {0}: {1}").format(base_url, e), title=_("Connection Error"))
+
+        if response.status_code in (401, 403):
+            frappe.throw(
+                _("OAuth login failed for {0}. The Client ID / Client Secret are not valid for this environment. "
+                "If Flick gave you an API Key instead, set Auth Type to <b>api_key</b> and enter the key.").format(settings.name),
+                title=_("Authentication Failed"),
+            )
+        if not response.ok:
+            frappe.throw(
+                _("Token request failed ({0}): {1}").format(response.status_code, response.text[:300]),
+                title=_("Authentication Failed"),
+            )
         response_json = response.json()
         access_token = response_json.get("access_token")
 
@@ -106,9 +128,23 @@ class FlickAdapter(BaseAdapter):
             frappe.throw(_("Participant ID is missing on E-Invoice Provider Settings"))
 
         headers = self.get_auth_headers()
-        response = requests.get(f"{base_url}/v1/participants/{participant_id}", headers=headers)
+        url = f"{base_url}/v1/participants/{participant_id}"
+        response = requests.get(url, headers=headers, timeout=60)
 
-        return {"status": "success", "response": response.json()}
+        try:
+            body = response.json()
+        except ValueError:
+            body = response.text or _("(empty response body)")
+
+        if not response.ok:
+            return {
+                "status": "error",
+                "http_status": response.status_code,
+                "url": url,
+                "response": body,
+            }
+
+        return {"status": "success", "http_status": response.status_code, "response": body}
 
     def lookup_peppol_id(self, peppol_id):
         base_url = self.get_base_url()
@@ -186,8 +222,24 @@ class FlickAdapter(BaseAdapter):
 
         try:
             response_data = response.json()
-        except Exception:
-            response_data = response.text if doctype != "Purchase Invoice" else {}
+        except ValueError:
+            if response.ok:
+                response_data = response.text if doctype != "Purchase Invoice" else {}
+            else:
+                response_data = {
+                    "http_status": response.status_code,
+                    "reason": response.reason,
+                    "url": url,
+                    "body": response.text or "(empty response body)",
+                }
+
+        return response.status_code, response_data
+        # response = requests.post(url, headers=headers, json=payload, timeout=120)
+
+        # try:
+        #     response_data = response.json()
+        # except Exception:
+        #     response_data = response.text if doctype != "Purchase Invoice" else {}
 
         return response.status_code, response_data
 

@@ -6,7 +6,7 @@ frappe.ui.form.on("Sales Invoice", {
             frm.doc.docstatus === 1 &&
             (
                 frm.doc.custom_einvoice_status === "Not Submitted" ||
-                frm.doc.custom_reporting_status === "failed"
+                ["failed", "rejected"].includes((frm.doc.custom_reporting_status || "").toLowerCase())
             )
         ) {
 
@@ -40,8 +40,10 @@ frappe.ui.form.on("Sales Invoice", {
         if (!frm.doc.__islocal && frm.doc.custom_einvoice_status !== "Not Submitted") {
 
             // Hide Get Document Status once reported
-            const is_reported = (frm.doc.custom_reporting_status || "").toLowerCase() === "reported";
-
+            // const is_reported = (frm.doc.custom_reporting_status || "").toLowerCase() === "reported";
+            const is_reported = ["reported", "rejected"].includes(
+                (frm.doc.custom_reporting_status || "").toLowerCase()
+            );
             if (!is_reported) {
                 frm.add_custom_button(__('Get Document Status'), function () {
                     frappe.call({
@@ -75,8 +77,10 @@ frappe.ui.form.on("Sales Invoice", {
                                 const status = primary.status ?? nested.status ?? "-";
 
                                 // Normalised by each ASP's adapter on the server: pending / reported / rejected / failed
+                                const STATUS_TEXT = { 1: "pending", 2: "reported", 3: "rejected", 4: "failed" };
                                 const reportingStatus =
-                                    envelope.reporting_status ?? nested.reporting_status ?? primary.reporting_status ?? "-";
+                                    envelope.reporting_status ?? nested.reporting_status ?? primary.reporting_status ??
+                                    STATUS_TEXT[primary.status] ?? frm.doc.custom_reporting_status ?? "-";
                                 const reporting = String(reportingStatus).toLowerCase();
 
                                 const rawJson = frappe.utils.escape_html(JSON.stringify(res, null, 2));
@@ -112,13 +116,14 @@ frappe.ui.form.on("Sales Invoice", {
 
             // Hide XML / PDF buttons if already attached
             const attachments = (frm.get_docinfo() && frm.get_docinfo().attachments) || [];
+            const is_rejected = (frm.doc.custom_reporting_status || "").toLowerCase() === "rejected";
             const has_ext = (ext) => attachments.some(a =>
                 ((a.file_name || a.file_url || "").toLowerCase()).endsWith(ext)
             );
             const has_xml = has_ext(".xml");
             const has_pdf = has_ext(".pdf");
 
-            if (!has_xml) {
+            if (!has_xml && !is_rejected) {
                 frm.add_custom_button(__('XML'), function () {
                     frappe.call({
                         method: "einvoice_erpgulf.core.attach.get_document_xml",
@@ -142,7 +147,7 @@ frappe.ui.form.on("Sales Invoice", {
                 }, __('Get Document'));
             }
 
-            if (!has_pdf) {
+            if (!has_pdf && !is_rejected) {
                 frm.add_custom_button(__('PDF'), function () {
                     frappe.call({
                         method: "einvoice_erpgulf.core.attach.get_document_pdf",

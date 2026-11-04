@@ -378,7 +378,7 @@ class SuntechAdapter(BaseAdapter):
         if not number:
             if required:
                 frappe.throw(
-                    _("{0} {1} has no Legal Registration Number ({2}) - Suntech requires the seller's "
+                    _("{1} has no Legal Registration Number ({2}) - Suntech requires the seller's "
                       "legal registration identifier (IBT-030).").format(
                         _(party_doc.doctype), party_doc.name, reg_type or _("Commercial/Trade license")
                     )

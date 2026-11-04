@@ -53,11 +53,15 @@ class BaseAdapter:
             title=_("Not supported"),
         )
 
-    # ---- shared helpers (every adapter gets these for free) ----
+    # # ---- shared helpers (every adapter gets these for free) ----
+    # def get_base_url(self):
+    #     """Base URL Override wins only if someone deliberately set it.
+    #     Otherwise the provider's normal Base URL."""
+    #     return self.settings.base_url_override or self.settings.base_url
+
     def get_base_url(self):
-        """Base URL Override wins only if someone deliberately set it.
-        Otherwise the provider's normal Base URL."""
-        return self.settings.base_url_override or self.settings.base_url
+        url = self.settings.base_url_override or self.settings.base_url
+        return (url or "").rstrip("/")
 
     def _cache_key(self):
         return f"einvoice_token:{self.settings.name}"
