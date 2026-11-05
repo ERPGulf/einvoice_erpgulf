@@ -56,25 +56,25 @@ class FlickAdapter(BaseAdapter):
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        # response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
-        # response.raise_for_status()
+        response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+        response.raise_for_status()
 
-        try:
-            response = requests.post(url, data=payload, timeout=30)
-        except requests.exceptions.RequestException as e:
-            frappe.throw(_("Could not reach {0}: {1}").format(base_url, e), title=_("Connection Error"))
+        # try:
+        #     response = requests.post(url, data=payload, timeout=30)
+        # except requests.exceptions.RequestException as e:
+        #     frappe.throw(_("Could not reach {0}: {1}").format(base_url, e), title=_("Connection Error"))
 
-        if response.status_code in (401, 403):
-            frappe.throw(
-                _("OAuth login failed for {0}. The Client ID / Client Secret are not valid for this environment. "
-                "If Flick gave you an API Key instead, set Auth Type to <b>api_key</b> and enter the key.").format(settings.name),
-                title=_("Authentication Failed"),
-            )
-        if not response.ok:
-            frappe.throw(
-                _("Token request failed ({0}): {1}").format(response.status_code, response.text[:300]),
-                title=_("Authentication Failed"),
-            )
+        # if response.status_code in (401, 403):
+        #     frappe.throw(
+        #         _("OAuth login failed for {0}. The Client ID / Client Secret are not valid for this environment. "
+        #         "If Flick gave you an API Key instead, set Auth Type to <b>api_key</b> and enter the key.").format(settings.name),
+        #         title=_("Authentication Failed"),
+        #     )
+        # if not response.ok:
+        #     frappe.throw(
+        #         _("Token request failed ({0}): {1}").format(response.status_code, response.text[:300]),
+        #         title=_("Authentication Failed"),
+        #     )
         response_json = response.json()
         access_token = response_json.get("access_token")
 
