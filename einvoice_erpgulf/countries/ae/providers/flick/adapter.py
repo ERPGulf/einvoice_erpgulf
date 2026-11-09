@@ -9,7 +9,87 @@ from einvoice_erpgulf.core.base import BaseAdapter
 from einvoice_erpgulf.countries.ae.providers.flick import purchase_json, sales_json
 
 
+def to_flick_sandbox_schema(doc_json):
+    """Convert the new (pre-prod/production) JSON back to the old sandbox shape."""
+    d = json.loads(json.dumps(doc_json))
+
+    # flags -> metadata
+    if "flags" in d:
+        flags = d.pop("flags") or {}
+        flags.pop("is_selfbilled", None)
+        d["metadata"] = flags
+
+    # identifiers map -> list
+    party = d.get("receiving_party") or {}
+    ids = party.get("identifiers")
+    if isinstance(ids, dict):
+        id_list = []
+        for scheme, entry in ids.items():
+            code = scheme.replace("AE:", "")
+            if code == "VAT":
+                party.setdefault("vat_number", entry.get("value"))
+                continue
+            row = {"type": code, "value": entry.get("value")}
+            if entry.get("authority_name"):
+                row["authority_name"] = entry["authority_name"]
+            id_list.append(row)
+        if id_list:
+            party["identifiers"] = id_list
+        else:
+            party.pop("identifiers", None)
+
+    # payment_means: type_code -> payment_means_code
+    for pm in d.get("payment_means") or []:
+        if isinstance(pm, dict) and "type_code" in pm:
+            pm["payment_means_code"] = pm.pop("type_code")
+
+    # invoice lines
+    for line in d.get("invoice_lines") or []:
+        if "quantity" in line:
+            line["invoiced_quantity"] = line.pop("quantity")
+        if "tax_category" in line:
+            line["vat_category"] = line.pop("tax_category")
+        if "tax_percentage" in line:
+            line["vat_percentage"] = line.pop("tax_percentage")
+        if "tax_exemption_reason_code" in line:
+            line["vat_exemption_reason_code"] = line.pop("tax_exemption_reason_code")
+
+    return d
+
+
+
 class FlickAdapter(BaseAdapter):
+
+    def parse_submit_response(self, status_code, response_data):
+        """Flick answers 202 (accepted) with data.document_id; sandbox uses data.id."""
+        body = response_data if isinstance(response_data, dict) else {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+
+        document_id = data.get("document_id") or data.get("id") or body.get("id")
+        reporting_status = data.get("reporting_status") or body.get("reporting_status")
+        exchange_status = data.get("exchange_status") or body.get("exchange_status")
+
+        success = status_code in (200, 201, 202) and (
+            body.get("status") in ("success", "processed", "accepted") or bool(document_id)
+        )
+
+        return {
+            "document_id": document_id,
+            "reporting_status": reporting_status,
+            "exchange_status": exchange_status,
+            "success": success,
+        }
+
+    def _participant_url(self, suffix=""):
+        """Sandbox -> {base}/v1/{participant_id}{suffix}
+        Pre-Production / Production -> {base}/v1/participants/{participant_id}{suffix}"""
+        base_url = (self.get_base_url() or "").rstrip("/")
+        participant_id = self.settings.participant_id
+        env = (self.settings.get("custom_environment") or "").strip().lower()
+        if env == "sandbox":
+            return f"{base_url}/v1/{participant_id}{suffix}"
+        return f"{base_url}/v1/participants/{participant_id}{suffix}"
+
     def get_auth_headers(self, extra=None):
         headers = dict(extra or {})
         settings = self.settings
@@ -59,22 +139,6 @@ class FlickAdapter(BaseAdapter):
         response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
         response.raise_for_status()
 
-        # try:
-        #     response = requests.post(url, data=payload, timeout=30)
-        # except requests.exceptions.RequestException as e:
-        #     frappe.throw(_("Could not reach {0}: {1}").format(base_url, e), title=_("Connection Error"))
-
-        # if response.status_code in (401, 403):
-        #     frappe.throw(
-        #         _("OAuth login failed for {0}. The Client ID / Client Secret are not valid for this environment. "
-        #         "If Flick gave you an API Key instead, set Auth Type to <b>api_key</b> and enter the key.").format(settings.name),
-        #         title=_("Authentication Failed"),
-        #     )
-        # if not response.ok:
-        #     frappe.throw(
-        #         _("Token request failed ({0}): {1}").format(response.status_code, response.text[:300]),
-        #         title=_("Authentication Failed"),
-        #     )
         response_json = response.json()
         access_token = response_json.get("access_token")
 
@@ -195,6 +259,14 @@ class FlickAdapter(BaseAdapter):
                 "message": str(e),
                 "response": getattr(e.response, "text", ""),
             }
+    
+    def get_status_from_document_status(self, body):
+        """New API: data.reporting.status; sandbox: data.reporting_status."""
+        if not isinstance(body, dict):
+            return None
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        reporting = data.get("reporting") if isinstance(data.get("reporting"), dict) else {}
+        return reporting.get("status") or data.get("reporting_status") or data.get("status")
 
     # ---- invoices ----
     def submit_invoice(self, doctype, doc, json_data=None):
@@ -212,10 +284,32 @@ class FlickAdapter(BaseAdapter):
         base_url = self.get_base_url()
         headers = self.get_auth_headers({"Content-Type": "application/json"})
 
+       
+
+        # if doctype == "Purchase Invoice":
+        #     url = self._participant_url("/simulate/incoming")
+        # else:
+        #     url = self._participant_url("/documents")
+
+        env = (settings.get("custom_environment") or "").strip().lower()
+
         if doctype == "Purchase Invoice":
-            url = f"{base_url}/v1/{participant_id}/simulate/incoming"
+            if env == "sandbox":
+                url = self._participant_url("/simulate/incoming")
+            else:
+                # pre-prod / production: self-billed invoice (389) via the normal documents endpoint
+                url = self._participant_url("/documents")
+                flags = json_data.pop("metadata", None) or json_data.get("flags") or {}
+                flags["is_selfbilled"] = True
+                json_data["flags"] = flags
+                if json_data.get("document_type") not in ("389", "261"):
+                    json_data["document_type"] = "261" if doc.get("is_return") else "389"
         else:
-            url = f"{base_url}/v1/{participant_id}/documents"
+            url = self._participant_url("/documents")
+
+        env = (settings.get("custom_environment") or "").strip().lower()
+        if env == "sandbox" and doctype != "Purchase Invoice":
+            json_data = to_flick_sandbox_schema(json_data)
         payload = {"document": json_data}
 
         response = requests.post(url, headers=headers, json=payload, timeout=120)
@@ -256,7 +350,7 @@ class FlickAdapter(BaseAdapter):
 
         response_data = json.loads(doc.custom_submit_response)
         submit_data = response_data.get("data", {})
-        document_id = submit_data.get("id")
+        document_id = submit_data.get("document_id") or submit_data.get("id") or doc.get("custom_document_id")
         document_identifier = submit_data.get("document_identifier") or doc.name
         if not document_id:
             frappe.throw(_("Document ID not found in submit response"))
@@ -269,7 +363,7 @@ class FlickAdapter(BaseAdapter):
 
         # Primary call - the same "documents/{id}" path this adapter has
         # always used.
-        url = f"{base_url}/v1/{participant_id}/documents/{document_id}"
+        url = self._participant_url(f"/documents/{document_id}")
         response = requests.get(url, headers=headers)
 
         if response.status_code != 200:
@@ -282,7 +376,7 @@ class FlickAdapter(BaseAdapter):
 
     
         if isinstance(data, list) and not data and document_identifier:
-            alt_url = f"{base_url}/v1/{participant_id}/documents"
+            alt_url = self._participant_url("/documents")
             alt_response = requests.get(
                 alt_url,
                 headers=headers,
@@ -298,21 +392,21 @@ class FlickAdapter(BaseAdapter):
 
         return {"http_status": response.status_code, "response": data}
 
+    
     def get_document_xml(self, doctype, doc):
         settings = self.settings
         participant_id = settings.participant_id
         if not participant_id:
             frappe.throw(_("Participant ID is missing on E-Invoice Provider Settings"))
-        if not doc.custom_submit_response:
-            frappe.throw(_("Submit response not found in Invoice"))
 
-        response_data = json.loads(doc.custom_submit_response)
-        document_id = response_data.get("data", {}).get("id")
+        data = {}
+        if doc.custom_submit_response:
+            data = json.loads(doc.custom_submit_response).get("data", {}) or {}
+        document_id = data.get("document_id") or data.get("id") or doc.get("custom_document_id")
         if not document_id:
             frappe.throw(_("Document ID not found in submit response"))
 
-        base_url = self.get_base_url()
-        url = f"{base_url}/v1/{participant_id}/documents/{document_id}/xml"
+        url = self._participant_url(f"/documents/{document_id}/xml")
         headers = self.get_auth_headers()
         response = requests.get(url, headers=headers)
 
@@ -326,16 +420,15 @@ class FlickAdapter(BaseAdapter):
         participant_id = settings.participant_id
         if not participant_id:
             frappe.throw(_("Participant ID is missing on E-Invoice Provider Settings"))
-        if not doc.custom_submit_response:
-            frappe.throw(_("Submit response not found in Invoice"))
 
-        response_data = json.loads(doc.custom_submit_response)
-        document_id = response_data.get("data", {}).get("id")
+        data = {}
+        if doc.custom_submit_response:
+            data = json.loads(doc.custom_submit_response).get("data", {}) or {}
+        document_id = data.get("document_id") or data.get("id") or doc.get("custom_document_id")
         if not document_id:
             frappe.throw(_("Document ID not found in submit response"))
 
-        base_url = self.get_base_url()
-        url = f"{base_url}/v1/{participant_id}/documents/{document_id}/pdf"
+        url = self._participant_url(f"/documents/{document_id}/pdf")
         headers = self.get_auth_headers()
         response = requests.get(url, headers=headers)
 
@@ -395,6 +488,7 @@ class FlickAdapter(BaseAdapter):
 
         return response_data
 
+
     def get_subscription(self):
         settings = self.settings
         base_url = self.get_base_url()
@@ -449,34 +543,98 @@ class FlickAdapter(BaseAdapter):
             return {"raw_response": response.text}
 
     # ---- incoming invoice import ----
+    # def parse_incoming_invoice(self, invoice_json):
+    #     """Flick's PEPPOL-style JSON: seller in receiving_party, lines in
+    #     invoice_lines."""
+    #     party = invoice_json.get("receiving_party") or {}
+
+    #     lines = []
+    #     for line in invoice_json.get("invoice_lines") or []:
+    #         lines.append({
+    #             "name": line.get("name"),
+    #             "description": line.get("description"),
+    #             "qty": float(line.get("invoiced_quantity") or 1),
+    #             "uom": line.get("uom") or "Nos",
+    #             "rate": float(line.get("unit_price") or 0),
+    #             "amount": float(line.get("line_extension_amount") or 0),
+    #             "vat_rate": float(line.get("vat_percentage") or 5),
+    #         })
+
+    #     payment_means_code = None
+    #     payment_means = invoice_json.get("payment_means") or []
+    #     if payment_means and isinstance(payment_means[0], dict):
+    #         pm = payment_means[0]
+    #         payment_means_code = pm.get("payment_means_code") or (
+    #             pm.get("payment_means") or {}
+    #         ).get("payment_means_code")
+
+    #     return {
+    #         "supplier_name": party.get("trade_name") or party.get("legal_name"),
+    #         "vat_number": party.get("vat_number"),
+    #         "posting_date": invoice_json.get("issue_date"),
+    #         "due_date": invoice_json.get("due_date"),
+    #         "currency": invoice_json.get("document_currency") or "AED",
+    #         "document_id": invoice_json.get("document_identifier"),
+    #         "conversion_rate": invoice_json.get("currency_exchange_rate"),
+    #         "payment_means_code": payment_means_code,
+    #         "lines": lines,
+    #     }
+
+        # e-invoice (UN/ECE) unit code -> ERPNext UOM
+    UOM_FROM_CODE = {
+        "H87": "Nos", "C62": "Nos", "EA": "Nos", "BX": "Box", "KGM": "Kg",
+        "GRM": "Gram", "LTR": "Litre", "MTR": "Meter", "HUR": "Hour",
+        "DAY": "Day", "MON": "Month",
+    }
+
+    def _erpnext_uom(self, code):
+        """Map a UN/ECE unit code to an existing ERPNext UOM, else Nos."""
+        code = (code or "").strip()
+        if code and frappe.db.exists("UOM", code):
+            return code
+        uom = self.UOM_FROM_CODE.get(code.upper())
+        if uom and frappe.db.exists("UOM", uom):
+            return uom
+        return "Nos"
+
     def parse_incoming_invoice(self, invoice_json):
-        """Flick's PEPPOL-style JSON: seller in receiving_party, lines in
-        invoice_lines."""
+        """Flick's PEPPOL-style JSON (old sandbox and new pre-prod/production keys)."""
         party = invoice_json.get("receiving_party") or {}
 
         lines = []
         for line in invoice_json.get("invoice_lines") or []:
+            qty = line.get("quantity") or line.get("invoiced_quantity") or 1
+            vat = line.get("tax_percentage")
+            if vat is None:
+                vat = line.get("vat_percentage")
             lines.append({
                 "name": line.get("name"),
-                "description": line.get("description"),
-                "qty": float(line.get("invoiced_quantity") or 1),
-                "uom": line.get("uom") or "Nos",
+                "description": line.get("description") or line.get("name"),
+                "qty": float(qty),
+                "uom": self._erpnext_uom(line.get("uom")),
                 "rate": float(line.get("unit_price") or 0),
                 "amount": float(line.get("line_extension_amount") or 0),
-                "vat_rate": float(line.get("vat_percentage") or 5),
+                "vat_rate": float(vat if vat is not None else 5),
             })
 
         payment_means_code = None
         payment_means = invoice_json.get("payment_means") or []
         if payment_means and isinstance(payment_means[0], dict):
             pm = payment_means[0]
-            payment_means_code = pm.get("payment_means_code") or (
+            payment_means_code = pm.get("type_code") or pm.get("payment_means_code") or (
                 pm.get("payment_means") or {}
             ).get("payment_means_code")
 
+        identifiers = party.get("identifiers") or {}
+        vat_number = party.get("vat_number")
+        if not vat_number and isinstance(identifiers, dict):
+            vat_number = (identifiers.get("AE:VAT") or {}).get("value")
+
+        flags = invoice_json.get("flags") or invoice_json.get("metadata") or {}
+
         return {
             "supplier_name": party.get("trade_name") or party.get("legal_name"),
-            "vat_number": party.get("vat_number"),
+            "vat_number": vat_number,
             "posting_date": invoice_json.get("issue_date"),
             "due_date": invoice_json.get("due_date"),
             "currency": invoice_json.get("document_currency") or "AED",
@@ -485,8 +643,6 @@ class FlickAdapter(BaseAdapter):
             "payment_means_code": payment_means_code,
             "lines": lines,
         }
-
-
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def flick_webhook_listener():
     """Listener for Flick API webhooks. Logs incoming data and updates invoice status."""

@@ -114,14 +114,36 @@ def create_purchase_invoice_from_fta(docname: str):
         vat_number = parsed.get("vat_number")
 
         # Try to find supplier by VAT or name
+        # supplier = None
+        # if vat_number:
+        #     supplier = frappe.db.get_value("Supplier", {"tax_id": vat_number}, "name")
+        # if not supplier and supplier_name:
+        #     supplier = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
+        # if not supplier:
+        #     frappe.throw(_(f"Supplier not found: {supplier_name} (VAT: {vat_number}). Please create the supplier first."))
+                # Find supplier: VAT + name first, then VAT (only if unique), then name
         supplier = None
-        if vat_number:
-            supplier = frappe.db.get_value("Supplier", {"tax_id": vat_number}, "name")
+        if vat_number and supplier_name:
+            supplier = frappe.db.get_value(
+                "Supplier", {"tax_id": vat_number, "supplier_name": supplier_name}, "name"
+            )
+        if not supplier and vat_number:
+            matches = frappe.get_all("Supplier", filters={"tax_id": vat_number}, pluck="name")
+            if len(matches) == 1:
+                supplier = matches[0]
+            elif len(matches) > 1:
+                frappe.throw(
+                    _("More than one supplier has VAT {0}: {1}. The incoming invoice is from <b>{2}</b>. "
+                      "Please make the supplier name match or correct the duplicate VAT numbers.").format(
+                        vat_number, ", ".join(matches), supplier_name
+                    ),
+                    title=_("Duplicate Supplier VAT"),
+                )
         if not supplier and supplier_name:
             supplier = frappe.db.get_value("Supplier", {"supplier_name": supplier_name}, "name")
         if not supplier:
-            frappe.throw(_(f"Supplier not found: {supplier_name} (VAT: {vat_number}). Please create the supplier first."))
-
+            frappe.throw(_("Supplier not found: {0} (VAT: {1}). Please create the supplier first.").format(supplier_name, vat_number))
+            
         # 4. Create Purchase Invoice
         pi = frappe.new_doc("Purchase Invoice")
         pi.company = company

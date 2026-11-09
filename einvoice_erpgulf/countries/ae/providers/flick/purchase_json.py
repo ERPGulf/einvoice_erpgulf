@@ -20,6 +20,18 @@ def r2(val):
     return str(Decimal(val).quantize(Decimal("0.01"), ROUND_HALF_UP))
 
 
+def format_peppol_id(value):
+    """UAE Peppol ID = 0235:<10-digit TIN>. Accepts a TRN, a TIN, or an already formatted ID."""
+    value = (value or "").strip()
+    if not value:
+        frappe.throw(_("Supplier Peppol ID is missing"), title=_("Peppol ID Required"))
+    if ":" in value:
+        return value
+    digits = re.sub(r"\D", "", value)
+    if len(digits) < 10:
+        frappe.throw(_("Invalid Peppol ID / TRN: {0}").format(value), title=_("Invalid Peppol ID"))
+    return f"0235:{digits[:10]}"
+
 def get_icv_code(invoice_number):
     """
     Extracts the numeric part from the invoice number to generate the ICV code.
@@ -188,8 +200,7 @@ def get_invoice_type_code(sales_invoice_doc):
     Returns invoice_type_code based on Purchase Invoice flags:
     """
     if sales_invoice_doc.is_return == 1:
-        return "361"
-    
+        return "261"
     return "389"
   
 
@@ -475,22 +486,25 @@ def get_item_data(sales_invoice_doc, vat_rate):
             
         tax = net * Decimal(tax_rate) / Decimal(100)
         total_tax += tax
-
+        UOM_CODES = {"nos": "H87", "nos.": "H87", "unit": "H87", "units": "H87", "pcs": "H87",
+                "each": "H87", "box": "BX", "kg": "KGM", "gram": "GRM", "litre": "LTR",
+                "meter": "MTR", "hour": "HUR", "day": "DAY", "month": "MON"}
+        uom_code = UOM_CODES.get((item.uom or "").strip().lower(), "H87")
         # Invoice line
         invoice_line = {
             "id": str(idx),
             "note": "Please check the invoice",
-            "invoiced_quantity": str(item.qty),
-            "uom": item.uom,
+            "quantity": str(item.qty),
+            "uom": uom_code,
             "line_extension_amount": str(r2(net)),
             "accounting_cost": item.cost_center,
             "name": item.item_name,
-            "description": item.description,
+            "description": frappe.utils.strip_html(item.description or "").strip() or item.item_name,
             "commodity_code": commodity_code,
-            "hs_code": hs_code,
-            "sac_code": sac_code,
-            "vat_category": get_vat_category_code(vat_category),
-            "vat_percentage": r2(tax_rate),
+            **({"hs_code": hs_code} if hs_code else {}),
+            **({"sac_code": sac_code} if sac_code else {}),
+            "tax_category": get_vat_category_code(vat_category),
+            "tax_percentage": r2(tax_rate),
             "unit_price": r2(item.net_rate),
             "base_quantity": "1"
             # "line_extension_amount": get_item_line_extension_amount(item)
@@ -614,78 +628,30 @@ def get_invoice_transaction_metadata(doc):
         "is_ecommerce": bit_code[6] == "1",
         "is_export": bit_code[7] == "1",
     }
-
-# def get_payment_means(sales_invoice_doc):
-#     """Build UAE E-invoicing payment_means array from Sales Invoice payments."""
-
-#     payment_means_list = []
-
-#     for pay_row in sales_invoice_doc.payments:
-#         # 1. Get Mode of Payment document
-#         mop = frappe.get_doc("Mode of Payment", pay_row.mode_of_payment)
-
-#         # 2. Get custom payment means code (stored in MoP)
-#         pm_code = mop.get("custom_payment_means_codes") or ""
-
-#         # 3. Get first account under Mode of Payment → Accounts child table
-#         if not mop.accounts:
-#             continue
-
-#         mop_acc = mop.accounts[0]
-
-#         # 4. Fetch Account document
-#         acc = frappe.get_doc("Account", mop_acc.default_account)
-
-#         # -------------------------
-#         # UAE JSON construction
-#         # -------------------------
-#         payment_means_entry = {
-#             "payment_means_code": pm_code,
-#             "payment_means_code_name": mop.mode_of_payment,
-#             "payee_financial_account": {
-#                 "id": acc.account_number,
-#                 "id_scheme_id": "IBAN" if acc.account_type == "Bank" else "OTH",
-#                 "name": acc.account_name,
-#                 "financial_institution_branch": {
-#                     "id": acc.company or ""
-#                 }
-#             }
-#         }
-
-#         # If card payments → include card details (optional)
-#         if pm_code in ["48", "55", "57"]:  # Debit/Credit card
-#             payment_means_entry["card_account"] = {
-#                 "primary_account_number_id": "XXXXXXXXXXXX1234",
-#                 "network_id": "VISA",
-#                 "holder_name": sales_invoice_doc.customer
-#             }
-
-#         payment_means_list.append(payment_means_entry)
-
-#     return payment_means_list
 def get_payment_means(purchase_invoice_doc):
-    """Build UAE E-invoicing payment_means for Purchase Invoice (simple & correct)."""
+    """Build UAE e-invoicing payment_means for Purchase Invoice.
 
+    custom_payment_means_codes on Purchase Invoice is a Select like
+    "10 - Cash" / "30 - Credit transfer"; only the code before " - " is sent.
+    Payment means is mandatory except on credit/debit notes and deemed supply (ibr-191-ae).
+    """
     payment_means_list = []
 
-    # 1️⃣ Get payment means code from Purchase Invoice
-    pm_code = purchase_invoice_doc.get("custom_payment_means_codes") or "30"
+    pm_value = (purchase_invoice_doc.get("custom_payment_means_codes") or "").strip()
 
-    # 2️⃣ Build basic structure (PEPPOL compliant)
-    payment_means_entry = {
-        "payment_means_code": pm_code,
-        "payment_means_code_name": "Credit" if pm_code == "30" else "Other"
-    }
+    if pm_value:
+        payment_code = pm_value.split(" - ")[0].strip()
+        payment_means_list.append({"type_code": payment_code})
+    else:
+        is_return = bool(purchase_invoice_doc.get("is_return"))
+        is_deemed = get_invoice_transaction_metadata(purchase_invoice_doc).get("is_deemed")
 
-    # 3️⃣ Optional: card details (only if needed)
-    if pm_code in ["48", "55", "57"]:
-        payment_means_entry["card_account"] = {
-            "primary_account_number_id": "XXXXXXXXXXXX1234",
-            "network_id": "VISA",
-            "holder_name": purchase_invoice_doc.supplier or ""
-        }
-
-    payment_means_list.append(payment_means_entry)
+        if not (is_return or is_deemed):
+            frappe.throw(
+                _("Payment Means is mandatory for this invoice. Please select "
+                  "<b>Payment Means Codes</b> on Purchase Invoice {0}.").format(purchase_invoice_doc.name),
+                title=_("Payment Means Required"),
+            )
 
     return payment_means_list
 
@@ -758,9 +724,14 @@ def build_uae_invoice_json(invoice_number):
     transaction_code = get_transaction_type_code(sales_invoice_doc)
     is_ftz = transaction_code and transaction_code.startswith("1")
     validate_receiving_party_fields(sales_invoice_doc,customer_doc,address_data,transaction_code)
+    if not address_data.phone:
+        frappe.throw(
+            _("Phone is missing in Supplier Address <b>{0}</b>. Please add a phone number and submit again.").format(address_data.name),
+            title=_("Supplier Phone Required"),
+        )
     receiving_party = {
                 "trade_name":  customer_doc.supplier_name,
-                "peppol_id":  customer_doc.custom_peppol_id,
+                "peppol_id": format_peppol_id(customer_doc.custom_peppol_id or customer_doc.tax_id),
                 "street_address": address_data.address_line1,
                 "city_address": address_data.city,
                 "additional_street_address": address_data.address_line2,
@@ -781,15 +752,27 @@ def build_uae_invoice_json(invoice_number):
                 "contact_telephone": address_data.phone ,
                 "contact_email": address_data.email_id,
     }
+    identifiers = {}
+    if customer_doc.tax_id:
+        identifiers["AE:VAT"] = {"value": customer_doc.tax_id}
+
     reg_type = customer_doc.get("custom_legal_registration_identifier_type")
     if reg_type:
-        if not customer_doc.custom_trade_license_number:
-            frappe.throw(_("Legal Registration Number is mandatory when Legal Registration Identifier Type is {0}").format(reg_type))
-        receiving_party["identifiers"] = [{
-            "type": LEGAL_REGISTRATION_TYPES.get(reg_type, "TL"),
-            "value": customer_doc.custom_trade_license_number,
-        }]
+        if not customer_doc.get("custom_trade_license_number"):
+            frappe.throw(_("Legal Registration Number is mandatory on Supplier {0}").format(customer_doc.name))
+        scheme = LEGAL_REGISTRATION_TYPES.get(reg_type, "TL")
+        entry = {"value": customer_doc.custom_trade_license_number}
+        auth = (customer_doc.get("custom_legal_registration_authority") or "").strip()
+        if auth:
+            entry["authority_name"] = auth
+        identifiers[f"AE:{scheme}"] = entry
+    else:
+        frappe.throw(
+            _("Supplier {0}: Legal Registration Identifier Type and Number are required for self-billed invoices.").format(customer_doc.name),
+            title=_("Supplier Legal Registration Required"),
+        )
 
+    receiving_party["identifiers"] = identifiers
     if is_ftz:
         if not customer_doc.custom_fz_beneficiary_id:
             frappe.throw(_(
@@ -861,12 +844,12 @@ def build_uae_invoice_json(invoice_number):
                 "payable_amount": payable_amount,
                 "currency_id": sales_invoice_doc.currency
             },
-        "payment_means": [
-                get_payment_means(sales_invoice_doc)
-            ],
         "invoice_totals": {},
         "metadata":get_invoice_transaction_metadata(sales_invoice_doc)
     }
+    payment_means = get_payment_means(sales_invoice_doc)
+    if payment_means:
+        invoice["payment_means"] = payment_means
     invoice = add_credit_note_details(sales_invoice_doc, invoice)
     exchange_rate = get_currency_exchange_rate(sales_invoice_doc)
     if exchange_rate is not None:
@@ -898,13 +881,21 @@ def build_uae_invoice_json(invoice_number):
     invoice["invoice_lines"] = invoice_lines_data["invoice_lines"]
 
 
+    # invoice["invoice_totals"] = {
+    #     "line_extension_amount": r2(total_net),
+    #     "tax_exclusive_amount": r2(total_net),
+    #     "tax_inclusive_amount": r2(total_net + total_tax),
+    #     "allowance_total_amount": r2(abs(Decimal(sales_invoice_doc.discount_amount or 0))),
+    #     "payable_amount": r2(total_net + total_tax),
+    #     "currency_id": sales_invoice_doc.currency
+    # }
     invoice["invoice_totals"] = {
-        "line_extension_amount": r2(total_net),
-        "tax_exclusive_amount": r2(total_net),
-        "tax_inclusive_amount": r2(total_net + total_tax),
-        "allowance_total_amount": r2(abs(Decimal(sales_invoice_doc.discount_amount or 0))),
-        "payable_amount": r2(total_net + total_tax),
-        "currency_id": sales_invoice_doc.currency
+    "line_extension_amount": r2(total_net),
+    "tax_exclusive_amount": r2(total_net),
+    "tax_amount": r2(total_tax),
+    "tax_inclusive_amount": r2(total_net + total_tax),
+    "payable_amount": r2(total_net + total_tax),
+    "currency_id": sales_invoice_doc.currency
     }
 
     return invoice

@@ -101,7 +101,8 @@ def get_document_status(invoice_name: str):
 
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
-		return {"http_status": http_status, "response": body}
+		# return {"http_status": http_status, "response": body}
+		return {"http_status": http_status, "response": body, "reporting_status": reporting_status}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "E-Invoice Document Status Error")

@@ -66,6 +66,58 @@ def validate_accredited_service_provider(doc, method=None):
             "Set up its credentials before submitting e-invoices."
         ).format(provider, doc.company))
 
+    validate_party_address(doc)
+
+
+
+ADDRESS_REQUIRED_FIELDS = [
+    ("address_line1", _("Address Line 1")),
+    ("city", _("City")),
+    ("pincode", _("Postal Code")),
+    ("country", _("Country")),
+    ("email_id", _("Email Address")),
+    ("phone", _("Phone")),
+]
+
+
+def validate_party_address(doc):
+    """Customer (Sales) / Supplier (Purchase) address must have every field
+    e-invoicing needs. Lists all missing fields in one message."""
+    if doc.doctype == "Sales Invoice":
+        party_type, party = "Customer", doc.customer
+        address_name = doc.get("customer_address") or frappe.db.get_value(
+            "Customer", party, "customer_primary_address"
+        )
+    else:
+        party_type, party = "Supplier", doc.supplier
+        address_name = doc.get("supplier_address") or frappe.db.get_value(
+            "Supplier", party, "supplier_primary_address"
+        )
+
+    if not address_name:
+        frappe.throw(
+            _("No address found for {0} <b>{1}</b>. Please add an address and select it on the invoice.").format(
+                party_type, party
+            ),
+            title=_("Address Required"),
+        )
+
+    address = frappe.get_doc("Address", address_name)
+    missing = [label for field, label in ADDRESS_REQUIRED_FIELDS if not (address.get(field) or "").strip()]
+
+    # Emirate only for UAE addresses
+    if (address.country or "").strip().lower() in ("united arab emirates", "uae") and not (
+        address.get("emirate") or ""
+    ).strip():
+        missing.append(_("Emirate"))
+
+    if missing:
+        frappe.throw(
+            _("Please fill these fields in {0} Address <b>{1}</b>:<br><br>• {2}").format(
+                party_type, address.name, "<br>• ".join(missing)
+            ),
+            title=_("Address Details Missing"),
+        )
   
 def success_log(
     title=None,
