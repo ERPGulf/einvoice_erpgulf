@@ -15,8 +15,9 @@ Two dicts in hooks.py drive everything:
 The Company's ``country`` picks the profile; the Company's
 ``custom_einvoice_provider`` picks the adapter from that country's list.
 Adding a country is a profile class plus one line in einvoice_countries;
-adding a provider is an adapter class plus one line under its country. The
-same adapter class may be listed under several countries.
+adding a provider is an adapter class plus one line under its country.
+Adapters live in countries/<cc>/providers/<asp>/; a country never imports
+another country's adapter.
 """
 
 import frappe

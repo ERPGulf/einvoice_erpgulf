@@ -68,7 +68,7 @@ The app has no country field of its own. It reads the standard ERPNext field **C
    }
    ```
 
-   The same adapter class may be listed under more than one country when a provider is accredited in several — list it again under `"OM"`, no new code.
+   A provider accredited in more than one country gets its own adapter folder in each, e.g. `countries/om/providers/flick/`.
 3. `bench --site <site> clear-cache && bench --site <site> migrate`, then restart the workers (hooks are cached in Redis).
 
 **On screen:** the name is now selectable on *Company → E-Invoice Provider* and on *E-Invoice Provider Settings → Provider* (`sync_provider_options` appends it on migrate; existing options are never removed). A name that is not registered for the company's country is refused on save with "No adapter is registered for provider …", which is the check that keeps a typo or an unbuilt provider from reaching an invoice.

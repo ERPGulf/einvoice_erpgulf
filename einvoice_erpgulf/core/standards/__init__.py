@@ -14,8 +14,8 @@ profile IDs are, what the UI should call the tax authority.
                                      country's constants and tables
 
 Adapters never import a country profile by name; they use ``self.profile``,
-which the registry resolves from the Company's country. That is what lets
-one adapter class serve two countries when a provider is accredited in both.
+which the registry resolves from the Company's country. That keeps country
+rules out of adapters, so an adapter holds only its ASP's API.
 """
 
 import frappe

@@ -72,7 +72,7 @@ from einvoice_erpgulf.countries.ae.profile import (
 )
 ```
 
-When you need a helper that is not there, add it to the country's `profile.py` if a second provider in that country would need it; to `core/standards/<standard>/` if every country on that standard would; keep it in the adapter if only that provider's API cares. New adapters should use `self.profile.<method>` rather than the module-level imports, so the same class can be registered for a second country (Oman) without edits.
+When you need a helper that is not there, add it to the country's `profile.py` if a second provider in that country would need it; to `core/standards/<standard>/` if every country on that standard would; keep it in the adapter if only that provider's API cares. New adapters should use `self.profile.<method>` rather than the module-level imports, so a second country's copy of the adapter only needs that country's API changes.
 
 **On screen:** *Company* → TRN (feeds `tin_from_trn`); *Address* → Emirate / Country (feeds `resolve_address_codes`); the VAT category on the invoice and its items (feeds `vat_category_code`); *UOM* on the invoice line (feeds `uom_to_unece`). When those are wrong the ASP rejects the invoice, and the fix is in the master data, not in code.
 
@@ -204,7 +204,7 @@ einvoice_providers = {
 }
 ```
 
-The key is the provider name exactly as it will appear in the dropdowns; the outer key is the country code, and the same adapter class may be listed under several countries. `migrate` runs `sync_provider_options` (hooked on `after_migrate` and `after_install`), which appends the new name to the Provider dropdown on E-Invoice Provider Settings and to *Accredited Service Providers* on Company; the existing FTA list is kept. Doing this first means every later test is a real end-to-end test. `hooks.py` is cached in Redis, so `clear-cache` and a worker restart are not optional.
+The key is the provider name exactly as it will appear in the dropdowns; the outer key is the country code, and each entry points into that country's own `countries/<cc>/providers/` folder. `migrate` runs `sync_provider_options` (hooked on `after_migrate` and `after_install`), which appends the new name to the Provider dropdown on E-Invoice Provider Settings and to *Accredited Service Providers* on Company; the existing FTA list is kept. Doing this first means every later test is a real end-to-end test. `hooks.py` is cached in Redis, so `clear-cache` and a worker restart are not optional.
 
 **On screen:** after migrate, both dropdowns show the new name. Selecting a provider that has no adapter makes Company (and Provider Settings) refuse to save with "No adapter is registered for provider …" — that is `assert_provider_registered`.
 
@@ -330,7 +330,7 @@ A country is a profile class plus one line in `hooks.py`; providers come after, 
 2. **Write `countries/<cc>/profile.py`.** Subclass the standard and set only what is national: `country_code`, `country_name`, `authority_short`, `provider_label`, `currency` and `currency_decimals`, `endpoint_scheme`, `endpoint_id_from_tax_id`, `region_field` / `region_codes` / `region_required`, `tax_codes` if narrower, `pint_suffix` (PINT) and `validate_document` for national rules. `countries/om/profile.py` is the shortest example; `countries/be/profile.py` shows a European one.
 3. **Add country fields** in `countries/<cc>/fixtures/custom_field.json` — the region field on Address if the country has one, and any national registration fields. Re-declaring a shared field there (for example `Company-custom_einvoice_provider` with the label *Accredited Service Provider*) changes its label on sites in that country. These are installed by `bench migrate` for every country that has a Company.
 4. **Register** it: `einvoice_countries["<Country name as on Company.country>"] = "einvoice_erpgulf.countries.<cc>.profile.<Cc>Profile"` and an empty `"<CC>": {}` under `einvoice_providers`.
-5. **Providers.** Each is `countries/<cc>/providers/<name>/adapter.py`. If a UAE adapter's API is identical for the new country (the same ASP accredited in Oman), list the existing class under `"OM"` — no new code. For a provider that takes UBL XML rather than JSON (every European access point), `submit_invoice` is `xml = self.build_ubl(doc)` followed by the POST; `core/standards/ubl/builder.py` does the document from the profile.
+5. **Providers.** Each is `countries/<cc>/providers/<name>/adapter.py`. If the same ASP is accredited in the new country, copy its adapter folder into `countries/<cc>/providers/<name>/`, adjust it for that country's API, and register it under the new country code. Never import from another country's folder. For a provider that takes UBL XML rather than JSON (every European access point), `submit_invoice` is `xml = self.build_ubl(doc)` followed by the POST; `core/standards/ubl/builder.py` does the document from the profile.
 6. **Test** with the Testing Guide section 10 (and section 9 for each of its providers) on a Company whose Country is the new one; the ribbon labels, dropdown wording and address validation should all read as that country's.
 
 **On screen:** *Company* → Country; after `bench migrate`, the country's fields appear on Address / Customer / Supplier and the Company provider field carries that country's label.

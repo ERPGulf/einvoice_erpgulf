@@ -48,9 +48,9 @@ einvoice_countries = {
 # automatically with every name below on bench migrate; nothing has to
 # be edited in the DocType or the Custom Field.
 #
-# The same adapter class may be listed under more than one country when
-# a provider is accredited in several (e.g. a UAE ASP also accredited in
-# Oman): list it again under "OM", no new code needed.
+# A provider accredited in more than one country gets its own folder in
+# each (countries/ae/providers/flick/, countries/om/providers/flick/).
+# A country folder never imports from another country.
 #
 # To add a provider:
 #   1. write countries/<cc>/providers/<name>/adapter.py
@@ -66,8 +66,8 @@ einvoice_providers = {
         # "Fynamics Techno Solutions FZCO": "einvoice_erpgulf.countries.ae.providers.fynamics.adapter.FynamicsAdapter",
     },
     "OM": {
-        # Oman-accredited providers. A UAE adapter whose Oman API is the same
-        # can be listed again here with the same class path.
+        # Oman-accredited providers, each in its own Oman folder:
+        # "Flick Network L.L.C": "einvoice_erpgulf.countries.om.providers.flick.adapter.FlickAdapter",
     },
     "BE": {
         # Peppol access points for Belgium:

@@ -7,7 +7,7 @@ from einvoice_erpgulf.core.provider_settings import (
 )
 from einvoice_erpgulf.core.registry import get_adapter
 
-from einvoice_erpgulf.countries.ae.providers.flick.adapter import flick_webhook_listener  # noqa: E402,F401
+# from einvoice_erpgulf.countries.ae.providers.flick.adapter import flick_webhook_listener  # noqa: E402,F401
 
 
 def update_webhook_logs():

@@ -7,9 +7,9 @@ customer goes live. Everything else is inherited from PintProfile and is the
 same as the UAE.
 
 Providers: the first Oman ASPs are expected to be the same companies as in
-the UAE. Register the existing adapter class a second time under "OM" in
-hooks.py (einvoice_providers) — no new adapter code is needed unless the
-provider's Oman API differs.
+the UAE. Each one gets its own folder, countries/om/providers/<asp>/, and is
+registered under "OM" in hooks.py (einvoice_providers). Never import from
+countries/ae/.
 """
 
 from einvoice_erpgulf.core.standards.pint.profile import PintProfile

@@ -60,7 +60,7 @@ What makes the UAE the reference: every ASP builds the UBL itself from a JSON th
 | Regions | Governorates (ISO 3166-2:OM codes MA, ZU, MU, BU, DA, BS, BJ, SS, SJ, ZA, WU); whether a domestic address must carry one is **(verify)**; the profile defaults to not required |
 | Currency | OMR, **3 decimals** (baisa) — the one place the shared `money()` helper is profile-aware |
 | Mandate | Phased from 2026 **(verify dates)** |
-| In the app | `countries/om/profile.py` (OmProfile) with the four constants marked TODO at the top, Governorate field on Address; providers block empty — list a UAE adapter class under `"OM"` once its Oman API is confirmed identical |
+| In the app | `countries/om/profile.py` (OmProfile) with the four constants marked TODO at the top, Governorate field on Address; providers block empty — Oman adapters go in `countries/om/providers/<asp>/` |
 
 Porting guidance: confirm the four constants, register the adapters, then run the Testing Guide section 9 on the OTA sandbox. Expect the UAE-only BTAE fields (transaction type flags, FZ beneficiary, RCM nature codes) not to apply; the Oman profile does not install them.
 
