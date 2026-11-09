@@ -72,6 +72,8 @@ einvoice_providers = {
     "BE": {
         # Peppol access points for Belgium:
         # "Access Point Name": "einvoice_erpgulf.countries.be.providers.<name>.adapter.<Name>Adapter",
+        "A-Cube": "einvoice_erpgulf.countries.be.providers.acube.adapter.ACubeAdapter",
+    
     },
 }
 

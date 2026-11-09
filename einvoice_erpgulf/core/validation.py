@@ -70,15 +70,15 @@ def validate_accredited_service_provider(doc, method=None):
 
 
 
-ADDRESS_REQUIRED_FIELDS = [
-    ("address_line1", _("Address Line 1")),
-    ("city", _("City")),
-    ("pincode", _("Postal Code")),
-    ("country", _("Country")),
-    ("email_id", _("Email Address")),
-    ("phone", _("Phone")),
-]
-
+def get_address_required_fields():
+    return [
+        ("address_line1", _("Address Line 1")),
+        ("city", _("City")),
+        ("pincode", _("Postal Code")),
+        ("country", _("Country")),
+        ("email_id", _("Email Address")),
+        ("phone", _("Phone")),
+    ]
 
 def validate_party_address(doc):
     """Customer (Sales) / Supplier (Purchase) address must have every field
@@ -103,7 +103,7 @@ def validate_party_address(doc):
         )
 
     address = frappe.get_doc("Address", address_name)
-    missing = [label for field, label in ADDRESS_REQUIRED_FIELDS if not (address.get(field) or "").strip()]
+    missing = [label for field, label in get_address_required_fields() if not (address.get(field) or "").strip()]
 
     # Emirate only for UAE addresses
     if (address.country or "").strip().lower() in ("united arab emirates", "uae") and not (

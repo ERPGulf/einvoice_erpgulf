@@ -401,8 +401,10 @@ def validate_receiving_party_fields(
         errors.append("IBR-144-ae: Address line 1 (IBT-050) MUST be provided in customer address")
     if not address_data.city:
         errors.append("IBR-144-ae: City (IBT-052) MUST be provided in customer address")
-    if not address_data.emirate:
-        errors.append("IBR-144-ae: Country subdivision / Emirate (IBT-054) MUST be provided in customer address")
+    # if not address_data.emirate:
+    #     errors.append("IBR-144-ae: Country subdivision / Emirate (IBT-054) MUST be provided in customer address")
+    if address_data.country != "Saudi Arabia" and address_data.emirate:
+        errors.append("IBR-144-ae: Emirate should only be provided for the United Arab Emirates.")
     if not address_data.pincode:
         errors.append("IBR-144-ae: Postal zone (IBT-056) MUST be provided in customer address")
     if not address_data.country:
