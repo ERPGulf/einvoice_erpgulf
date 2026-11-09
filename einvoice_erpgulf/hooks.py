@@ -64,6 +64,7 @@ einvoice_providers = {
         "Marmin AI Software Design LLC": "einvoice_erpgulf.countries.ae.providers.marmin.adapter.MarminAdapter",
         "Suntech Business Solutions DMCC": "einvoice_erpgulf.countries.ae.providers.suntech.adapter.SuntechAdapter",
         # "Fynamics Techno Solutions FZCO": "einvoice_erpgulf.countries.ae.providers.fynamics.adapter.FynamicsAdapter",
+        "A-Cube": "einvoice_erpgulf.countries.ae.providers.acube.adapter.ACubeAdapter",
     },
     "OM": {
         # Oman-accredited providers, each in its own Oman folder:
