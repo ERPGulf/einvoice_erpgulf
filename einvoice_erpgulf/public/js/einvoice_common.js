@@ -44,6 +44,8 @@ function einvoice_render_status_ribbon(frm) {
             ribbon = [reporting === "REJECTED" ? authority + " Rejected" : authority + " Failed", "#E0232E"];
         } else if (einvoice === "SUCCESS" && reporting === "REPORTED") {
             ribbon = [authority + " Reported", "#23B33A"];
+        } else if (einvoice === "SUCCESS" && reporting === "DELIVERED") {
+            ribbon = ["Delivered", "#23B33A"];
         } else if (einvoice === "SUCCESS" && reporting === "PENDING") {
             ribbon = [authority + " Pending", "#F29D1C"];
         } else if (einvoice === "SUCCESS" && reporting === "NOT REPORTED") {

@@ -14,6 +14,7 @@ never imports from another country.
 
 import hmac
 import json
+import uuid
 
 import frappe
 import requests
@@ -55,6 +56,24 @@ NS = {
 	"cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
 }
 
+def _q(prefix, tag):
+	return "{%s}%s" % (NS[prefix], tag)
+
+
+def _el(prefix, tag, text=None, **attrs):
+	e = etree.Element(_q(prefix, tag), {k: str(v) for k, v in attrs.items() if v is not None})
+	if text is not None:
+		e.text = str(text)
+	return e
+
+
+def _insert_after(parent, ref, new):
+	parent.insert(parent.index(ref) + 1, new)
+
+
+def _status_text(value):
+	"""A-Cube's status is a word on documents, but an HTTP code (int) on errors."""
+	return value.lower() if isinstance(value, str) else ""
 
 def _secret_of(settings):
 	"""webhook_secret whether the field is a Password or a Data field."""
@@ -171,9 +190,7 @@ class ACubeAdapter(BaseAdapter):
 		return CREDIT_NOTES if doc_or_type.get("is_return") else INVOICES
 
 	def submit_invoice(self, doctype, doc, json_data=None):
-		xml = self.build_ubl(doc)  # PINT-AE UBL from AeProfile
-		if isinstance(xml, str):
-			xml = xml.encode("utf-8")
+		xml = self.build_pint_ae(doc)
 
 		# save_outgoing_payload writes JSON, so wrap the XML in a dict
 		self.save_outgoing_payload(doc, {"content_type": "application/xml", "ubl_xml": xml.decode("utf-8")})
@@ -187,13 +204,151 @@ class ACubeAdapter(BaseAdapter):
 		body = response_data if isinstance(response_data, dict) else {}
 		document_id = body.get("invoiceId") or body.get("creditNoteId") or body.get("uuid") or body.get("id")
 		success = status_code in (200, 201, 202) and bool(document_id)
-		raw = (body.get("status") or "").lower()
+		raw = _status_text(body.get("status"))
 		return {
 			"document_id": document_id,
 			"reporting_status": STATUS_MAP.get(raw, raw or "sent") if success else "failed",
 			"exchange_status": raw or None,
 			"success": success,
 		}
+
+		# ---------------------------------------------------------- PINT-AE
+	def _legal_registration(self, party_doc, fallback):
+		"""(identifier, scheme agency code, authority) for PartyLegalEntity/CompanyID.
+		Trade licence fields when filled, else the TIN (fallback)."""
+		value = (
+			party_doc.get("custom_trade_license_number")
+			or party_doc.get("custom_legal_registration_identifier")
+			or fallback
+		)
+		label = party_doc.get("custom_legal_registration_identifier_type") or "Commercial/Trade license"
+		code = (getattr(self.profile, "legal_registration_types", {}) or {}).get(label, "TL")
+		return value, code, party_doc.get("custom_legal_registration_authority")
+	def _apply_payment_means(self, root, doc):
+		"""PaymentMeansCode from the first payment row's Mode of Payment
+		(custom_payment_means_codes, e.g. "10 - Cash"). For bank transfers the
+		company IBAN goes in PayeeFinancialAccount (ibr-192-ae)."""
+		code = None
+		for row in doc.get("payments") or []:
+			if row.mode_of_payment:
+				value = frappe.db.get_value("Mode of Payment", row.mode_of_payment, "custom_payment_means_codes")
+				if value:
+					code = value.split(" - ")[0].strip()
+					break
+		pm = root.find("cac:PaymentMeans", NS)
+		if pm is None:
+			return
+		code_el = pm.find("cbc:PaymentMeansCode", NS)
+		if code:
+			code_el.text = code
+		code = code_el.text
+
+		payee = pm.find("cac:PayeeFinancialAccount", NS)
+		if code in ("30", "31", "42", "58"):
+			if payee is None:
+				bank = frappe.db.get_value(
+					"Bank Account",
+					{"company": doc.company, "is_company_account": 1, "disabled": 0},
+					["iban", "bank_account_no", "account_name"],
+					order_by="is_default desc",
+					as_dict=True,
+				)
+				account_id = bank and (bank.iban or bank.bank_account_no)
+				if account_id:
+					payee = _el("cac", "PayeeFinancialAccount")
+					payee.append(_el("cbc", "ID", account_id.replace(" ", "")))
+					if bank.account_name:
+						payee.append(_el("cbc", "Name", bank.account_name))
+					pm.append(payee)
+		elif payee is not None:
+			pm.remove(payee)  # cash, card...: no bank account
+			
+	def build_pint_ae(self, doc):
+		"""The shared UBL builder's document plus the PINT-AE pieces it doesn't
+		add yet: BTAE-02 transaction type, BTAE-07 UUID, seller/buyer legal
+		registration (IBT-030/047), item description, price base quantity and
+		gross price, and the line amounts in AED (BTAE-08 / BTAE-10)."""
+		xml = self.build_ubl(doc)
+		if isinstance(xml, str):
+			xml = xml.encode("utf-8")
+		root = etree.fromstring(xml, etree.XMLParser(resolve_entities=False, no_network=True))
+		m = self.profile.money
+
+		# header: ProfileExecutionID right after ProfileID, UUID right after ID
+		if root.find("cbc:ProfileExecutionID", NS) is None:
+			_insert_after(root, root.find("cbc:ProfileID", NS),
+						  _el("cbc", "ProfileExecutionID", self.profile.transaction_type_flags(doc)))
+		if root.find("cbc:UUID", NS) is None:
+			stable = uuid.uuid5(uuid.NAMESPACE_URL, f"{frappe.local.site}/{doc.doctype}/{doc.name}")
+			_insert_after(root, root.find("cbc:ID", NS), _el("cbc", "UUID", str(stable)))
+
+		# legal registration on both parties (IBR-150 / IBR-136)
+		company = frappe.get_doc("Company", doc.company)
+		if doc.doctype == "Purchase Invoice":
+			counterpart = frappe.get_doc("Supplier", doc.supplier)
+			seller_doc, buyer_doc = counterpart, company
+		else:
+			counterpart = frappe.get_doc("Customer", doc.customer)
+			seller_doc, buyer_doc = company, counterpart
+		for path, party_doc in (
+			("cac:AccountingSupplierParty/cac:Party", seller_doc),
+			("cac:AccountingCustomerParty/cac:Party", buyer_doc),
+		):
+			party = root.find(path, NS)
+			if party is None:
+				continue
+			endpoint = party.find("cbc:EndpointID", NS)
+			value, code, authority = self._legal_registration(
+				party_doc, endpoint.text if endpoint is not None else None
+			)
+			ple = party.find("cac:PartyLegalEntity", NS)
+			if value and ple is not None and ple.find("cbc:CompanyID", NS) is None:
+				_insert_after(ple, ple.find("cbc:RegistrationName", NS),
+							  _el("cbc", "CompanyID", value, schemeAgencyID=code, schemeAgencyName=authority))
+
+				# payment means from the invoice's Mode of Payment, as the other UAE adapters do
+		self._apply_payment_means(root, doc)
+		# lines
+		for ln in root.findall("cac:InvoiceLine", NS) + root.findall("cac:CreditNoteLine", NS):
+			qty_el = ln.find("cbc:InvoicedQuantity", NS)
+			if qty_el is None:
+				qty_el = ln.find("cbc:CreditedQuantity", NS)
+			item = ln.find("cac:Item", NS)
+			price = ln.find("cac:Price", NS)
+			price_amount = price.find("cbc:PriceAmount", NS)
+			currency = price_amount.get("currencyID")
+
+			if item.find("cbc:Description", NS) is None:  # IBR-125
+				item.insert(0, _el("cbc", "Description", item.find("cbc:Name", NS).text))
+
+			if price.find("cbc:BaseQuantity", NS) is None:  # IBR-126
+				_insert_after(price, price_amount, _el("cbc", "BaseQuantity", "1", unitCode=qty_el.get("unitCode")))
+			if price.find("cac:AllowanceCharge", NS) is None:
+				ac = _el("cac", "AllowanceCharge")
+				ac.append(_el("cbc", "ChargeIndicator", "false"))
+				ac.append(_el("cbc", "Amount", m(0), currencyID=currency))
+				ac.append(_el("cbc", "BaseAmount", price_amount.text, currencyID=currency))
+				price.append(ac)
+
+			# IBR-147: price must reproduce the line net amount
+			net = float(ln.find("cbc:LineExtensionAmount", NS).text)
+			qty = float(qty_el.text or 0)
+			if qty and abs(qty * float(price_amount.text) - net) > 0.005:
+				price_amount.text = f"{net / qty:.6f}".rstrip("0").rstrip(".")
+				ac = price.find("cac:AllowanceCharge", NS)
+				ac.find("cbc:BaseAmount", NS).text = price_amount.text
+
+			if ln.find("cac:ItemPriceExtension", NS) is None:  # BTAE-08 / BTAE-10
+				pct_el = item.find("cac:ClassifiedTaxCategory/cbc:Percent", NS)
+				tax = net * float(pct_el.text if pct_el is not None and pct_el.text else 0) / 100.0
+				ext = _el("cac", "ItemPriceExtension")
+				ext.append(_el("cbc", "Amount", m(net + tax), currencyID=currency))
+				tt = _el("cac", "TaxTotal")
+				tt.append(_el("cbc", "TaxAmount", m(tax), currencyID=currency))
+				ext.append(tt)
+				_insert_after(ln, price, ext)
+
+		return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 	# ---------------------------------------------------------- status
 	def _document_id(self, doc):
@@ -209,7 +364,7 @@ class ACubeAdapter(BaseAdapter):
 	def get_status_from_document_status(self, body):
 		if not isinstance(body, dict):
 			return None
-		raw = (body.get("status") or body.get("marking") or "").lower()
+		raw = _status_text(body.get("status")) or _status_text(body.get("marking"))
 		return STATUS_MAP.get(raw, raw or None)
 
 	def get_document_xml(self, doctype, doc):

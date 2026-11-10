@@ -41,7 +41,7 @@ frappe.ui.form.on("Sales Invoice", {
 
             // Hide Get Document Status once reported
             // const is_reported = (frm.doc.custom_reporting_status || "").toLowerCase() === "reported";
-            const is_reported = ["reported", "rejected"].includes(
+            const is_reported = ["reported", "rejected", "delivered"].includes(
                 (frm.doc.custom_reporting_status || "").toLowerCase()
             );
             if (!is_reported) {
@@ -71,7 +71,7 @@ frappe.ui.form.on("Sales Invoice", {
                                     ? primary.data
                                     : {};
 
-                                const documentId = nested.id ?? primary.id ?? "-";
+                                const documentId = nested.id ?? primary.id ?? primary.uuid ?? "-";
 
                                 // API call result, shown as before (e.g. "success")
                                 const status = primary.status ?? nested.status ?? "-";
@@ -89,7 +89,7 @@ frappe.ui.form.on("Sales Invoice", {
                                     typeof httpStatus === "number" && httpStatus >= 200 && httpStatus < 300;
                                 const indicator = !isHttpSuccess || ["rejected", "failed"].includes(reporting)
                                     ? "red"
-                                    : (reporting === "reported" ? "green" : "orange");
+                                    : (["reported", "delivered"].includes(reporting) ? "green" : "orange");
 
                                 const html = `
                                     <p><b>HTTP Status:</b> ${frappe.utils.escape_html(String(httpStatus ?? "-"))}</p>
