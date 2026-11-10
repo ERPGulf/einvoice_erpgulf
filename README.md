@@ -6,7 +6,7 @@ One app, one folder per country, one folder per provider under it. The common co
 
 | | |
 | --- | --- |
-| Countries shipped | **United Arab Emirates** (PINT-AE, FTA, accredited ASPs) — in production. **Oman** (PINT-OM, Oman Tax Authority) — profile ready, four constants to confirm against the OTA specification. **Belgium** (Peppol BIS 3.0 / EN 16931, mandatory B2B since 2026) — profile ready, adapters per access point. Any other PINT or EN 16931 country is a profile away; the [Country Guide](docs/COUNTRIES.md) covers each one. |
+| Countries shipped | **United Arab Emirates** (PINT-AE, FTA, accredited ASPs) — in production. **Oman** (PINT-OM, Oman Tax Authority) — profile ready, four constants to confirm against the OTA specification. **Belgium** (Peppol BIS 3.0 / EN 16931, mandatory B2B since 2026) — access point **A-Cube**, tested on the A-Cube sandbox. Any other PINT or EN 16931 country is a profile away; the [Country Guide](docs/COUNTRIES.md) covers each one. |
 | Providers | Provider-agnostic. Each is one folder under `countries/<cc>/providers/`; the live list is `einvoice_providers` in `hooks.py`. Pull requests for new providers and countries are welcome. |
 | Documents | Sales Invoice (invoice, credit note), Purchase Invoice (self-billed invoice and credit note), incoming supplier invoices |
 | Frappe / ERPNext | Version 15 and 16 · also available on Frappe Cloud |
@@ -84,9 +84,9 @@ The app has no country field of its own. It reads the standard ERPNext field **C
 
 **On screen:** after migrate, the country's fields appear on Address / Customer / Supplier / invoices, the Company's provider field carries that country's label, the Provider dropdown offers that country's providers, and the ribbon names that country's authority ("FTA Reported", "OTA Reported", "FPS Finance Reported").
 
-### What never needs a change
+### What never needs a change per provider
 
-`core/` — submit, status sync, attachments, webhooks logging, incoming-invoice import, the cancel block, the ribbon, the three doctypes. If a change you are about to make is outside `countries/<cc>/`, it is either already common code or belongs in `core/standards/` for every country on that standard.
+`core/` — submit, status sync, attachments, webhooks logging, incoming-invoice import, the cancel block, the ribbon, the three doctypes. If a change you are about to make is outside `countries/<cc>/`, it is either already common code or belongs in `core/standards/` for every country on that standard (for example the UBL builder fixes made for Belgium: PartyIdentification carries the scheme's own identifier, and a credit transfer carries the company IBAN).
 
 ## Installation
 
@@ -105,7 +105,7 @@ bench --site <site> migrate
 
 Updating later: `cd apps/einvoice_erpgulf && git pull`, then `bench --site <site> migrate`, `bench build --app einvoice_erpgulf`, `bench --site <site> clear-cache` and restart the workers.
 
-No Python packages beyond what Frappe already ships (`requests`, `PyJWT`). The site must be reachable from the internet on HTTPS for webhooks, and the scheduler must be enabled.
+No Python packages beyond what Frappe already ships (`requests`, `PyJWT`, `lxml`). The site must be reachable from the internet on HTTPS for webhooks, and the scheduler must be enabled.
 
 ## Migrating from uae_erpgulf
 
@@ -127,10 +127,11 @@ Take a backup first and try it on a copy of the site. On Frappe Cloud the same s
 
 ## Quick start (five minutes to a first submission)
 
-1. **Company** → set *Country*, tick *E-Invoice Enabled*, pick the provider under *E-Invoice Provider*, make sure *Tax ID* holds the national tax number (the 15-digit TRN in the UAE).
+1. **Company** → set *Country*, tick *E-Invoice Enabled*, pick the provider under *E-Invoice Provider*, make sure *Tax ID* holds the national tax number (the 15-digit TRN in the UAE; `BE` + the 10-digit enterprise number in Belgium, e.g. `BE0595571387`).
 2. **E-Invoice Provider Settings** → New: Company, Provider (same name as on Company), *Enabled*, credentials from the provider's sandbox, *Base URL*, *Participant ID* (Peppol ID). Save, then **E-Invoicing → Verify Token**.
 3. **Customer / Supplier** → *Peppol ID* and the country's registration fields; their **Address** needs *Country* and, where the country requires it, the region (Emirate, Governorate).
 4. **Sales Invoice** → fill *Tax Category* (and any dependent country fields), submit. The *E-Invoice Response* dialog shows the provider's reply; *E-Invoice Status*, *Reporting Status* and *Document ID* are filled in. Within five minutes the corner ribbon turns to *Reported* and the XML/PDF appear as attachments.
+5. **Belgium only** → the invoice also needs a *Customer's PO No* (or *Buyer Reference*), a VAT row (21 / 12 / 6 %), and, for payment by credit transfer, a company **Bank Account** with *Is Company Account* ticked and an IBAN. Without them A-Cube rejects the invoice (BR-S-05, BR-61).
 
 ## Folder structure
 
@@ -150,9 +151,9 @@ einvoice_erpgulf/einvoice_erpgulf/
 │   ├── submit_sales.py  send_purchase.py  status_sync.py  attach.py  webhook.py
 │   ├── incoming.py  verify_token.py  validation.py  provider_settings.py  return_validation.py
 ├── countries/
-│   ├── ae/  profile.py  fixtures/  providers/flick  marmin  suntech  (fynamics)
+│   ├── ae/  profile.py  fixtures/  providers/flick  marmin  suntech  acube  (fynamics)
 │   ├── om/  profile.py  fixtures/  providers/
-│   └── be/  profile.py  fixtures/  providers/
+│   └── be/  profile.py  fixtures/  providers/acube
 ├── e_invoice/                     # the Frappe module: doctypes, dashboard page, reports, workspace
 ├── fixtures/custom_field.json     # shared custom fields
 ├── public/js/                     # form scripts: buttons, ribbon, tooltips, bulk submit
@@ -170,7 +171,7 @@ Both need the scheduler enabled on the site (`bench --site <site> scheduler enab
 
 ## Webhooks
 
-Each provider has its own listener inside its adapter file, registered as a guest-accessible endpoint, for example `/api/method/einvoice_erpgulf.countries.ae.providers.suntech.adapter.suntech_webhook_listener`. The Provider Settings form shows the URL to give the provider. Every delivery is logged in **E-Invoice Webhook Log**; missed webhooks are covered by the 5-minute scheduler. Never ask a provider to send `Authorization: Bearer` to a webhook — Frappe intercepts it; use a custom header.
+Each provider has its own listener inside its adapter file, registered as a guest-accessible endpoint, for example `/api/method/einvoice_erpgulf.countries.ae.providers.suntech.adapter.suntech_webhook_listener`. The Provider Settings form shows the URL to give the provider. Every delivery is logged in **E-Invoice Webhook Log**; missed webhooks are covered by the 5-minute scheduler. Never ask a provider to send `Authorization: Bearer` to a webhook — Frappe intercepts it; use a custom header.A-Cube UAE does this: it sends a shared token in the `X-Acube-Token` header, which the listener checks. A-Cube Belgium signs deliveries with an HTTP Signature, which is not verified yet; until it is, its listener only updates invoices that already carry the document ID and re-reads incoming documents from the A-Cube API.
 
 ## Development
 

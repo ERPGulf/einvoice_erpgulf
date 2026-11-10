@@ -41,7 +41,7 @@ frappe.ui.form.on("Purchase Invoice", {
         if (!frm.doc.__islocal && frm.doc.custom_einvoice_status !== "Not Submitted") {
 
             // Hide Get Document Status once reported
-            const is_reported = ["reported", "rejected"].includes(
+            const is_reported = ["reported", "rejected", "delivered"].includes(
                 (frm.doc.custom_reporting_status || "").toLowerCase()
             );
 
@@ -91,8 +91,8 @@ frappe.ui.form.on("Purchase Invoice", {
                                 };
 
                                 const documentId =
-                                    findKeyLike(primary, [/^id$/i]) ??
-                                    findKeyLike(nested, [/^id$/i]) ??
+                                    findKeyLike(primary, [/^id$/i, /^uuid$/i]) ??
+                                    findKeyLike(nested, [/^id$/i, /^uuid$/i]) ??
                                     "-";
                                 const status = primary.status ?? nested.status ?? "-";
 
@@ -108,7 +108,7 @@ frappe.ui.form.on("Purchase Invoice", {
                                     typeof httpStatus === "number" && httpStatus >= 200 && httpStatus < 300;
                                 const indicator = !isHttpSuccess || ["rejected", "failed"].includes(reporting)
                                     ? "red"
-                                    : (reporting === "reported" ? "green" : "orange");
+                                    : (["reported", "delivered"].includes(reporting) ? "green" : "orange");
 
                                 const html = `
                                     <p><b>HTTP Status:</b> ${frappe.utils.escape_html(String(httpStatus ?? "-"))}</p>

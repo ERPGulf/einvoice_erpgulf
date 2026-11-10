@@ -180,24 +180,15 @@ class ACubeAdapter(BaseAdapter):
         return {"http_status": r.status_code, "response": _json_or_text(r)}
 
     def get_status_from_document_status(self, body):
-        """Map A-Cube's document resource to our status.
-        Confirm the field names from the first real response, which the sync
-        stores in custom_document_status_response on the invoice."""
+        """A-Cube puts the Peppol delivery result in peppolMessage:
+        success true -> delivered, false -> failed, missing/null -> still sending."""
         if not isinstance(body, dict):
             return None
-        if body.get("success") is True:
+        msg = body.get("peppolMessage") or {}
+        if msg.get("success") is True:
             return "delivered"
-        if body.get("success") is False:
+        if msg.get("success") is False:
             return "failed"
-        for key in ("status", "sendingStatus", "deliveryStatus"):
-            value = body.get(key)
-            if isinstance(value, str) and value:
-                value = value.lower()
-                if value in ("sent", "delivered", "success", "succeeded"):
-                    return "delivered"
-                if value in ("failed", "failure", "error", "rejected"):
-                    return "failed"
-                return value
         return None
 
     def get_document_xml(self, doctype, doc):
@@ -208,13 +199,21 @@ class ACubeAdapter(BaseAdapter):
         frappe.throw(_("A-Cube XML download failed ({0}): {1}").format(r.status_code, r.text[:300]))
 
     def get_document_pdf(self, doctype, doc):
-        # /print answers 302 to the file; requests follows it and drops our
-        # Authorization header if the file lives on another host
-        r = self._request("GET", f"{self._type_path(doc)}/{self._document_id(doc)}/print",
-                          headers={"Accept": "application/pdf"})
-        if r.ok:
-            return r.content
-        frappe.throw(_("A-Cube PDF download failed ({0}): {1}").format(r.status_code, r.text[:300]))
+        """/print redirects (302) to a file A-Cube renders on first request;
+        right after a send the file may not exist yet (S3 NoSuchKey), so retry."""
+        import time
+
+        path = f"{self._type_path(doc)}/{self._document_id(doc)}/print"
+        r = None
+        for attempt in range(4):
+            r = self._request("GET", path, headers={"Accept": "application/pdf"})
+            if r.ok and r.content[:4] == b"%PDF":
+                return r.content
+            if r.status_code != 404 and "NoSuchKey" not in r.text:
+                break
+            time.sleep(3 * (attempt + 1))  # 3, 6, 9 s
+        frappe.throw(_("A-Cube PDF not ready yet ({0}). Try Get Document → PDF again in a minute.").format(
+            r.status_code if r is not None else "-"))
 
     # ---------------------------------------------------------- webhooks
     def get_webhook_listener_url(self):
