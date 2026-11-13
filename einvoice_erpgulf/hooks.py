@@ -68,7 +68,7 @@ einvoice_providers = {
     },
     "OM": {
         # Oman-accredited providers, each in its own Oman folder:
-        # "Flick Network L.L.C": "einvoice_erpgulf.countries.om.providers.flick.adapter.FlickAdapter",
+        "Flick Network L.L.C": "einvoice_erpgulf.countries.om.providers.flick.adapter.FlickAdapter",
     },
     "BE": {
         # Peppol access points for Belgium:
