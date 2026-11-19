@@ -1,5 +1,5 @@
 app_name = "einvoice_erpgulf"
-app_title = "einvoice_erpgulf"
+app_title = "E-Invoicing for ERPNext - Multi-Country"
 app_publisher = "ERPGulf.com"
 app_description = "E-Invoice app for ERPNext that can be adopted for any country from ERPGulf.com"
 app_email = "support@erpgulf.com"

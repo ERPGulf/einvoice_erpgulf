@@ -17,7 +17,17 @@ class EInvoiceProviderSettings(Document):
 		self.check_auth_fields()
 		self.enforce_single_enabled_environment()
 		self.set_webhook_url()
-
+		self.check_certificate_private()
+		
+	def check_certificate_private(self):
+		"""A certificate attached as a public file can be downloaded by anyone."""
+		if not self.certificate:
+			return
+		is_private = frappe.db.get_value("File", {"file_url": self.certificate}, "is_private")
+		if not is_private:
+			frappe.throw(
+				_("The certificate must be attached as a private file. Remove it and attach it again with 'Is Private' ticked.")
+			)
 	def check_auth_fields(self):
 		if self.auth_type == "api_key" and not self.get_password("api_key", raise_exception=False):
 			frappe.throw(_("Please enter the API Key for Auth Type api_key."))

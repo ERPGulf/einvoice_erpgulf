@@ -29,7 +29,7 @@ def attach_missing_documents(doctype, invoice_name):
     """Fetch only the XML / PDF this invoice doesn't have yet. attach.py
     logs failures to the Error Log; here they are swallowed (and their popup
     messages dropped) so a sync, poll or webhook is never interrupted."""
-    from einvoice_erpgulf.core.attach import get_document_pdf, get_document_xml
+    from einvoice_erpgulf.core.attach import attach_document_pdf as get_document_pdf, attach_document_xml as get_document_xml
 
     current = frappe.db.get_value(
         doctype, invoice_name, ["custom_document_xml", "custom_document_pdf"], as_dict=True

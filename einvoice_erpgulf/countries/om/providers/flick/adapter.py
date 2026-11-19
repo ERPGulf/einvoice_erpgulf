@@ -14,7 +14,7 @@ import frappe
 import requests
 from frappe import _
 from frappe.utils import now_datetime
-
+from frappe.rate_limiter import rate_limit
 from einvoice_erpgulf.core.base import BaseAdapter
 from einvoice_erpgulf.countries.om.providers.flick import invoice_json
 from einvoice_erpgulf.countries.om.providers.flick.invoice_json import (
@@ -424,36 +424,45 @@ class FlickAdapter(BaseAdapter):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def flick_om_webhook_listener():
-    """Flick Oman webhooks: log every event and update the invoice's
-    reporting status."""
+    """Flick Oman webhook. The body is only a pointer: the real status is
+    fetched from Flick, never taken from the request."""
+    raw_data = frappe.request.get_data(as_text=True)
     try:
-        raw_data = frappe.request.get_data(as_text=True)
         data = json.loads(raw_data)
-        doc_data = data.get("data") or {}
+    except ValueError:
+        frappe.local.response.http_status_code = 400
+        return {"acknowledged": False, "processed": False}
 
-        document_id = doc_data.get("document_id") or doc_data.get("id")
-        reporting_status = doc_data.get("reporting_status")
+    doc_data = data.get("data") or {}
+    document_id = doc_data.get("document_id") or doc_data.get("id")
 
+    try:
         frappe.get_doc({
             "doctype": "E-Invoice Webhook Log",
             "webhook_response": raw_data,
             "document_id": document_id,
             "participant_id": data.get("participant_id"),
             "event_type": data.get("event") or data.get("event_type"),
-            "reporting_status": reporting_status,
+            "reporting_status": doc_data.get("reporting_status"),
             "exchange_status": doc_data.get("exchange_status"),
             "invoice_number": doc_data.get("document_identifier"),
             "status": doc_data.get("status"),
         }).insert(ignore_permissions=True)
 
-        if document_id and reporting_status:
+        if document_id:
             for doctype in ("Sales Invoice", "Purchase Invoice"):
                 name = frappe.db.get_value(doctype, {"custom_document_id": document_id}, "name")
                 if name:
-                    frappe.db.set_value(doctype, name, "custom_reporting_status", reporting_status)
+                    frappe.enqueue(
+                        "einvoice_erpgulf.core.status_sync.refresh_invoice_status",
+                        doctype=doctype,
+                        invoice_name=name,
+                        enqueue_after_commit=True,
+                    )
+                    break
 
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
         return {"acknowledged": True, "processed": True}
 
     except Exception:

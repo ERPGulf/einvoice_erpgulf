@@ -5,9 +5,11 @@ import requests
 from frappe import _
 from einvoice_erpgulf.core.provider_settings import get_active_provider_settings
 from einvoice_erpgulf.core.registry import get_adapter
-from einvoice_erpgulf.core.attach import get_document_xml
-from einvoice_erpgulf.core.attach import get_document_pdf
+from einvoice_erpgulf.core.attach import attach_document_xml as get_document_xml
+from einvoice_erpgulf.core.attach import attach_document_pdf as get_document_pdf
 from einvoice_erpgulf.core.validation import success_log
+from einvoice_erpgulf.core.permissions import load_invoice
+
 def send_invoice_to_provider(doc, method=None):
     """On Purchase Invoice Submit and after JSON generation, send it"""
 
@@ -46,17 +48,9 @@ def send_invoice_to_provider(doc, method=None):
 from typing import Optional, Union
 from frappe.model.document import Document
 import time
-@frappe.whitelist(allow_guest=False, methods=["POST"])
-def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] = None):
-    """
-    Store Success/Failed in custom_einvoice_status
-    """
 
-    if isinstance(doc, str):
-        doc = frappe.parse_json(doc)
-
-    if isinstance(doc, dict):
-        doc = frappe.get_doc(doc)
+def generate_and_send_einvoice(doc, method=None):
+    """on_submit hook (hooks.py) and bulk send. Not callable from the browser."""
     if doc.doctype != "Purchase Invoice":
         return
     if not frappe.db.get_value("Company", doc.company, "custom_einvoice_enabled"):
@@ -136,6 +130,15 @@ def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] 
             _("E-Invoice processing failed: {0}").format(str(e))
         )
 
+@frappe.whitelist(methods=["POST"])
+def send_einvoice(invoice_name: str):
+    """Send Invoice button. The user must be allowed to submit this invoice."""
+    from einvoice_erpgulf.core.permissions import load_invoice
+
+    doc = load_invoice("Purchase Invoice", invoice_name, "submit")
+    if doc.docstatus != 1:
+        frappe.throw(_("Submit the invoice first."))
+    generate_and_send_einvoice(doc)
 
 @frappe.whitelist()
 def bulk_send_invoices(invoices: list | str):
@@ -150,7 +153,7 @@ def bulk_send_invoices(invoices: list | str):
     for invoice in invoices:
         try:
             # Load documents
-            doc = frappe.get_doc("Purchase Invoice", invoice)
+            doc = load_invoice("Purchase Invoice", invoice, "submit")
             company_doc = frappe.get_doc("Company", doc.company)
 
             status = doc.custom_einvoice_status
@@ -160,12 +163,13 @@ def bulk_send_invoices(invoices: list | str):
                 skipped.append(invoice)
                 continue
 
-            # If invoice is Draft → Submit first
+            # Draft -> submit; the on_submit hook sends it
             if doc.docstatus == 0 and company_doc.custom_einvoice_enabled == 1:
                 doc.submit()
+                success.append(invoice)
 
-            # If invoice is Submitted → send e-invoice
-            if doc.docstatus == 1 and company_doc.custom_einvoice_enabled == 1:
+            # Already submitted -> send it now
+            elif doc.docstatus == 1 and company_doc.custom_einvoice_enabled == 1:
                 generate_and_send_einvoice(doc)
                 success.append(invoice)
 
@@ -179,38 +183,15 @@ def bulk_send_invoices(invoices: list | str):
         "failed": failed
     }
 
-
-
-
 @frappe.whitelist(methods=["POST"])
 def get_document_status(invoice_name: str):
-    """Fetch document status from this company's active provider and save
-    the response in the Purchase Invoice."""
+    """Status button on Purchase Invoice. The user must be able to open the invoice."""
+    from einvoice_erpgulf.core.permissions import load_invoice
+    from einvoice_erpgulf.core.verify_token import fetch_document_status
+
+    doc = load_invoice("Purchase Invoice", invoice_name, "read")
     try:
-        purchase_invoice_doc = frappe.get_doc("Purchase Invoice", invoice_name)
-        settings = get_active_provider_settings(purchase_invoice_doc.company)
-        adapter = get_adapter(settings)
-
-        result = adapter.get_document_status("Purchase Invoice", purchase_invoice_doc)
-        if isinstance(result, dict) and "http_status" in result:
-            http_status = result.get("http_status")
-            body = result.get("response")
-        else:
-            http_status = None
-            body = result
-
-        purchase_invoice_doc.db_set(
-            "custom_document_status_response",
-            json.dumps(body)
-        )
-
-        reporting_status = result.get("reporting_status") if isinstance(result, dict) else None
-        if not reporting_status:
-            reporting_status = adapter.get_status_from_document_status(body)
-        if reporting_status:
-            purchase_invoice_doc.db_set("custom_reporting_status", reporting_status)
-
-        return {"http_status": http_status, "response": body}
+        return fetch_document_status(doc)
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "E-Invoice Document Status Error")
         frappe.throw(_("Failed to fetch document status: {0}").format(str(e)))

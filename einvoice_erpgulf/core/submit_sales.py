@@ -5,9 +5,10 @@ import time
 from frappe import _
 from einvoice_erpgulf.core.provider_settings import get_active_provider_settings
 from einvoice_erpgulf.core.registry import get_adapter
-from einvoice_erpgulf.core.attach import get_document_xml
-from einvoice_erpgulf.core.attach import get_document_pdf
+from einvoice_erpgulf.core.attach import attach_document_xml as get_document_xml
+from einvoice_erpgulf.core.attach import attach_document_pdf as get_document_pdf
 from einvoice_erpgulf.core.validation import success_log
+from einvoice_erpgulf.core.permissions import load_invoice
 
 def send_invoice_to_provider(doc, method=None):
     """ On Sales Invoice Submit and after JSON generation """
@@ -47,14 +48,9 @@ def send_invoice_to_provider(doc, method=None):
 
 from typing import Optional, Union
 from frappe.model.document import Document
-@frappe.whitelist(allow_guest=False, methods=["POST"])
-def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] = None):
-    """ Store Success/Failed in custom_einvoice_status """
-    if isinstance(doc, str):
-        doc = frappe.parse_json(doc)
 
-    if isinstance(doc, dict):
-        doc = frappe.get_doc(doc)
+def generate_and_send_einvoice(doc, method=None):
+    """on_submit hook (hooks.py) and bulk send. Not callable from the browser."""
     if doc.doctype != "Sales Invoice":
         return
     if not frappe.db.get_value("Company", doc.company, "custom_einvoice_enabled"):
@@ -131,7 +127,15 @@ def generate_and_send_einvoice(doc: Union[Document, str], method: Optional[str] 
         frappe.msgprint(
             _("E-Invoice processing failed: {0}").format(str(e))
         )
+@frappe.whitelist(methods=["POST"])
+def send_einvoice(invoice_name: str):
+    """Send Invoice button. The user must be allowed to submit this invoice."""
+    from einvoice_erpgulf.core.permissions import load_invoice
 
+    doc = load_invoice("Sales Invoice", invoice_name, "submit")
+    if doc.docstatus != 1:
+        frappe.throw(_("Submit the invoice first."))
+    generate_and_send_einvoice(doc)
 
 @frappe.whitelist()
 def bulk_send_invoices(invoices: list | str):
@@ -146,7 +150,7 @@ def bulk_send_invoices(invoices: list | str):
     for invoice in invoices:
         try:
             # Load documents
-            doc = frappe.get_doc("Sales Invoice", invoice)
+            doc = load_invoice("Sales Invoice", invoice, "submit")
             company_doc = frappe.get_doc("Company", doc.company)
 
             status = doc.custom_einvoice_status

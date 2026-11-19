@@ -22,7 +22,8 @@ from frappe import _
 from frappe.utils import now_datetime
 from frappe.utils.file_manager import save_file
 from lxml import etree
-
+from datetime import timedelta
+from frappe.rate_limiter import rate_limit
 from einvoice_erpgulf.core.base import BaseAdapter
 
 PROVIDER = "A-Cube"
@@ -524,6 +525,7 @@ def _document_id_of(data):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def acube_webhook_listener():
 	"""A-Cube calls this for document.delivered and document.received.
 	The shared secret arrives in the X-Acube-Token header; anything without

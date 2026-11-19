@@ -41,7 +41,6 @@
         "diagnostics_tab",
         "section_diagnostics",
         "last_access_token",
-        "token_expires_at",
         "last_test_response",
         "last_webhook_subscribe_response",
         "column_break_wnft",
@@ -245,6 +244,13 @@
             "fieldtype": "Section Break"
         },
         {
+            "fieldname": "last_access_token",
+            "fieldtype": "Small Text",
+            "label": "Last Access Token",
+            "no_copy": 1,
+            "read_only": 1
+        },
+        {
             "fieldname": "last_test_response",
             "fieldtype": "Long Text",
             "label": "Last Test Response",
@@ -284,19 +290,6 @@
             "read_only": 1
         },
         {
-            "fieldname": "last_access_token",
-            "fieldtype": "Small Text",
-            "label": "Last Access Token",
-            "no_copy": 1,
-            "read_only": 1
-        },
-        {
-            "fieldname": "token_expires_at",
-            "fieldtype": "Datetime",
-            "label": "Token Expires At",
-            "read_only": 1
-        },
-        {
             "fieldname": "provider_name",
             "fieldtype": "Data",
             "label": "Provider Name",
@@ -306,7 +299,7 @@
     "grid_page_length": 50,
     "index_web_pages_for_search": 1,
     "links": [],
-    "modified": "2026-10-06 14:21:08.547165",
+    "modified": "2026-11-19 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "E-Invoice",
     "name": "E-Invoice Provider Settings",
@@ -324,6 +317,10 @@
             "role": "System Manager",
             "share": 1,
             "write": 1
+        },
+        {
+            "read": 1,
+            "role": "Accounts Manager"
         }
     ],
     "row_format": "Dynamic",

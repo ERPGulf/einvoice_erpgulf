@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import now_datetime
 from einvoice_erpgulf.core.base import BaseAdapter
 from einvoice_erpgulf.countries.ae.providers.flick import purchase_json, sales_json
-
+from frappe.rate_limiter import rate_limit
 
 def to_flick_sandbox_schema(doc_json):
     """Convert the new (pre-prod/production) JSON back to the old sandbox shape."""
@@ -136,7 +136,7 @@ class FlickAdapter(BaseAdapter):
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+        response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
         response.raise_for_status()
 
         response_json = response.json()
@@ -162,7 +162,7 @@ class FlickAdapter(BaseAdapter):
 
         try:
             headers = self.get_auth_headers()
-            response = requests.get(f"{base_url}/v1/auth/verify", headers=headers)
+            response = requests.get(f"{base_url}/v1/auth/verify", headers=headers, timeout=60)
 
             try:
                 response_text = json.dumps(response.json())
@@ -215,7 +215,7 @@ class FlickAdapter(BaseAdapter):
         url = f"{base_url}/v1/peppol/lookup/{peppol_id}"
         headers = self.get_auth_headers()
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
             return response.json()
 
@@ -248,7 +248,7 @@ class FlickAdapter(BaseAdapter):
         }
 
         try:
-            response = requests.put(url, headers=headers, json=payload)
+            response = requests.put(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             return response.json()
 
@@ -364,7 +364,7 @@ class FlickAdapter(BaseAdapter):
         # Primary call - the same "documents/{id}" path this adapter has
         # always used.
         url = self._participant_url(f"/documents/{document_id}")
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
 
         if response.status_code != 200:
             return {"http_status": response.status_code, "response": response.text}
@@ -380,8 +380,7 @@ class FlickAdapter(BaseAdapter):
             alt_response = requests.get(
                 alt_url,
                 headers=headers,
-                params={"document_identifier": document_identifier},
-            )
+                params={"document_identifier": document_identifier}, timeout=60)
             if alt_response.status_code == 200:
                 try:
                     alt_data = alt_response.json()
@@ -408,7 +407,7 @@ class FlickAdapter(BaseAdapter):
 
         url = self._participant_url(f"/documents/{document_id}/xml")
         headers = self.get_auth_headers()
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
 
         if response.status_code == 200:
             return response.text
@@ -430,7 +429,7 @@ class FlickAdapter(BaseAdapter):
 
         url = self._participant_url(f"/documents/{document_id}/pdf")
         headers = self.get_auth_headers()
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
 
         if response.status_code == 200:
             return response.content
@@ -473,7 +472,7 @@ class FlickAdapter(BaseAdapter):
             "participant_ids": [participant_id],
         }
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
 
         try:
             response_data = response.json()
@@ -499,7 +498,7 @@ class FlickAdapter(BaseAdapter):
 
         url = f"{base_url}/v1/webhooks/subscriptions/{uuid}"
         headers = self.get_auth_headers()
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
 
         try:
             return response.json()
@@ -514,7 +513,7 @@ class FlickAdapter(BaseAdapter):
             frappe.throw(_("Webhook UUID not found."))
 
         url = f"{self.get_base_url()}/v1/webhooks/subscriptions/{uuid}"
-        response = requests.delete(url, headers=self.get_auth_headers())
+        response = requests.delete(url, headers=self.get_auth_headers(), timeout=60)
 
         try:
             data = response.json()
@@ -535,7 +534,7 @@ class FlickAdapter(BaseAdapter):
 
         url = f"{base_url}/v1/webhooks/subscriptions/{uuid}/deliveries"
         headers = self.get_auth_headers()
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
 
         try:
             return response.json()
@@ -644,85 +643,47 @@ class FlickAdapter(BaseAdapter):
             "lines": lines,
         }
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def flick_webhook_listener():
-    """Listener for Flick API webhooks. Logs incoming data and updates invoice status."""
+    """Flick webhook. The body is only a pointer: the real status is
+    fetched from Flick, never taken from the request."""
+    raw_data = frappe.request.get_data(as_text=True)
     try:
-
-        raw_data = frappe.request.get_data(as_text=True)
         data = json.loads(raw_data)
+    except ValueError:
+        frappe.local.response.http_status_code = 400
+        return {"acknowledged": False, "processed": False}
 
-        # Extract top-level fields
-        event_type = data.get("event")
-        participant_id = data.get("participant_id")
+    doc_data = data.get("data") or {}
+    document_id = doc_data.get("document_id")
 
-        # Extract nested data
-        doc_data = data.get("data", {})
-
-        document_id = doc_data.get("document_id")
-        status = doc_data.get("status")
-        exchange_status = doc_data.get("exchange_status")
-        reporting_status = doc_data.get("reporting_status")
-        invoice_number = doc_data.get("document_identifier")
-
-        # Create Webhook Log Doc
-        doc = frappe.get_doc({
+    try:
+        frappe.get_doc({
             "doctype": "E-Invoice Webhook Log",
             "webhook_response": raw_data,
             "document_id": document_id,
-            "participant_id": participant_id,
-            "event_type": event_type,
-            "reporting_status": reporting_status,
-            "exchange_status": exchange_status,
-            "invoice_number": invoice_number,
-            "status": status
-        })
+            "participant_id": data.get("participant_id"),
+            "event_type": data.get("event"),
+            "reporting_status": doc_data.get("reporting_status"),
+            "exchange_status": doc_data.get("exchange_status"),
+            "invoice_number": doc_data.get("document_identifier"),
+            "status": doc_data.get("status"),
+        }).insert(ignore_permissions=True)
 
-        doc.insert(ignore_permissions=True)
-        if document_id and reporting_status:
+        if document_id:
+            for doctype in ("Sales Invoice", "Purchase Invoice"):
+                name = frappe.db.get_value(doctype, {"custom_document_id": document_id}, "name")
+                if name:
+                    frappe.enqueue(
+                        "einvoice_erpgulf.core.status_sync.refresh_invoice_status",
+                        doctype=doctype,
+                        invoice_name=name,
+                        enqueue_after_commit=True,
+                    )
+                    break
 
-            # Sales Invoice
-            sales_invoice = frappe.db.get_value(
-                "Sales Invoice",
-                {"custom_document_id": document_id},
-                "name"
-            )
-
-            if sales_invoice:
-                frappe.db.set_value(
-                    "Sales Invoice",
-                    sales_invoice,
-                    "custom_reporting_status",
-                    reporting_status
-                )
-
-            # Purchase Invoice
-            purchase_invoice = frappe.db.get_value(
-                "Purchase Invoice",
-                {"custom_document_id": document_id},
-                "name"
-            )
-
-            if purchase_invoice:
-                frappe.db.set_value(
-                    "Purchase Invoice",
-                    purchase_invoice,
-                    "custom_reporting_status",
-                    reporting_status
-                )
-
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
-
-        return {
-            "acknowledged": True,
-            "processed": True
-        }
+        return {"acknowledged": True, "processed": True}
 
     except Exception:
-        frappe.log_error(
-            title="Webhook Processing Error",
-            message=frappe.get_traceback()
-        )
-        return {
-            "acknowledged": False,
-            "processed": False
-        }
+        frappe.log_error(title="Webhook Processing Error", message=frappe.get_traceback())
+        return {"acknowledged": False, "processed": False}

@@ -15,11 +15,12 @@ import json
 
 import frappe
 import requests
+
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import now_datetime
 from frappe.utils.file_manager import save_file
 from lxml import etree
-
 from einvoice_erpgulf.core.base import BaseAdapter
 
 PROVIDER = "A-Cube"
@@ -323,6 +324,7 @@ class ACubeAdapter(BaseAdapter):
 
 # ============================================================== webhook
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def acube_webhook_listener():
     """A-Cube calls this for outgoing-document and incoming-document.
     Log it, queue the work, answer 200 fast (non-2xx makes A-Cube retry
@@ -376,15 +378,14 @@ def process_webhook(event, data):
 
 
 def _apply_outgoing_status(data):
+    """Webhook is only a pointer: re-fetch the real status from A-Cube."""
+    from einvoice_erpgulf.core.status_sync import refresh_invoice_status
+
     document_id = data["document_id"]
-    status = "delivered" if data.get("success") else "failed"
     for doctype in ("Sales Invoice", "Purchase Invoice"):
         name = frappe.db.get_value(doctype, {"custom_document_id": document_id}, "name")
         if name:
-            frappe.db.set_value(doctype, name, {
-                "custom_reporting_status": status,
-                "custom_document_status_response": json.dumps(data),
-            })
+            refresh_invoice_status(doctype, name)
 
 
 def _acube_settings_rows():

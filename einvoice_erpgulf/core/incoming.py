@@ -63,6 +63,7 @@ def _payment_means_option(code):
 @frappe.whitelist()
 def get_fta_incoming_invoices():
     """Fetch E-Invoice Incoming Invoice with status Not Submitted"""
+    frappe.has_permission("Purchase Invoice", "create", throw=True)
     fta_invoices = frappe.db.get_all(
         'E-Invoice Incoming Invoice',
         filters={'status': 'Not Submitted'},

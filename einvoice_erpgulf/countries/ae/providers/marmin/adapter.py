@@ -19,7 +19,7 @@ from einvoice_erpgulf.countries.ae.profile import (
     emirate_code as _marmin_uae_emirate_code,
     vat_category_code as _marmin_vat_category_code,
 )
-
+from frappe.rate_limiter import rate_limit
 
 def _marmin_sales_invoice_type_code(doc):
     """Sales Invoice invoice_type_code, same rule json_einvoice.py's own
@@ -159,7 +159,7 @@ class MarminAdapter(BaseAdapter):
             "X-MARMIN-VERSION": MARMIN_API_VERSION,
         }
 
-        response = requests.get(url, params={"client_id": client_id}, headers=headers)
+        response = requests.get(url, params={"client_id": client_id}, headers=headers, timeout=60)
 
         if not response.ok:
             frappe.throw(
@@ -237,7 +237,7 @@ class MarminAdapter(BaseAdapter):
         url = f"{base_url}/api/business-profiles/{business_profile_id}"
         headers = self.get_auth_headers()
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
             return {"status": "success", "response": response.json()}
 
@@ -270,7 +270,7 @@ class MarminAdapter(BaseAdapter):
         url = f"{base_url}/api/{resource}/{document_id}/peppol-status-logs"
         headers = self.get_auth_headers()
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
         try:
             body = response.json()
         except Exception:
@@ -331,7 +331,7 @@ class MarminAdapter(BaseAdapter):
         url = f"{base_url}/api/{resource}/{document_id}/xml"
         headers = self.get_auth_headers()
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
             return response.text
 
@@ -352,7 +352,7 @@ class MarminAdapter(BaseAdapter):
         url = f"{base_url}/api/{resource}/{document_id}/download-pdf"
         headers = self.get_auth_headers()
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
             return response.content
 
@@ -1180,6 +1180,7 @@ def _verify_marmin_webhook_signature(raw_body, received_signature, webhook_secre
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def marmin_webhook_listener():
     """Listener for Marmin's webhook events - the URL
     get_webhook_listener_url() above hands you to paste into the Marmin
@@ -1249,7 +1250,7 @@ def marmin_webhook_listener():
     try:
         base_url = adapter.get_base_url()
         url = f"{base_url}/api/{resource_path}/{resource_id}/peppol-status-logs"
-        response = requests.get(url, headers=adapter.get_auth_headers())
+        response = requests.get(url, headers=adapter.get_auth_headers(), timeout=60)
         try:
             status_log_body = response.json()
         except Exception:
