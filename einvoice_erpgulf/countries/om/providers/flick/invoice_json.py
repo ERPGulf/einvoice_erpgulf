@@ -638,6 +638,6 @@ def send_invoice_json(doctype: str, invoice_number: str):
     """Preview button: build and attach the JSON without sending it."""
     if doctype not in ("Sales Invoice", "Purchase Invoice"):
         frappe.throw(_("Unsupported doctype {0}").format(doctype))
-    frappe.has_permission(doctype, "read", invoice_number, throw=True)
+    frappe.has_permission(doctype, "write", invoice_number, throw=True)
     result = save_and_attach_invoice_json(doctype, invoice_number)
     return {"message": _("Invoice JSON generated and attached"), "file_url": result["file_url"]}

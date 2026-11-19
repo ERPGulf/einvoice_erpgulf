@@ -78,6 +78,7 @@ def create_purchase_invoice_from_fta(docname: str):
     Read the JSON file from E-Invoice Incoming Invoice doc
     and create a Purchase Invoice from it as Draft
     """
+    frappe.has_permission("Purchase Invoice", "create", throw=True)
     try:
         # 1. Get the E-Invoice Incoming Invoice doc
         uae_doc = frappe.get_doc("E-Invoice Incoming Invoice", docname)
