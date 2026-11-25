@@ -7,6 +7,7 @@ import frappe
 import requests
 from frappe import _
 from frappe.utils import now_datetime, strip_html
+from frappe.rate_limiter import rate_limit
 from einvoice_erpgulf.core.base import BaseAdapter
 # Shared PINT-AE helpers and code tables live in providers/pint.py. The
 # underscore aliases keep this file's call sites unchanged.
@@ -747,7 +748,7 @@ def _attach_documents_if_ready(doctype, invoice_name, body):
     if not isinstance(body, dict) or not invoice_name:
         return
 
-    from einvoice_erpgulf.core.attach import get_document_pdf, get_document_xml
+    from einvoice_erpgulf.core.attach import attach_document_pdf as get_document_pdf, attach_document_xml as get_document_xml
 
     current = frappe.db.get_value(
         doctype, invoice_name, ["custom_document_xml", "custom_document_pdf"], as_dict=True
@@ -792,6 +793,7 @@ def _verify_suntech_jwt(token):
 
 
 @frappe.whitelist(allow_guest=True,methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=300, seconds=60)
 def suntech_webhook_listener():
     """Suntech webhook: {event, invoice_id, ...}. The payload is only a
     pointer (§12.2) - fetch the invoice for the real state."""
@@ -810,7 +812,7 @@ def suntech_webhook_listener():
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else auth
     settings = _verify_suntech_jwt(token) if token else None
     if not settings:
-        frappe.log_error(f"Suntech webhook rejected - JWT not verified. Body: {raw_body}", "Suntech Webhook Auth Failed")
+        frappe.log_error("Suntech webhook rejected - JWT not verified", "Suntech Webhook Auth Failed")
         frappe.local.response["http_status_code"] = 401
         return {"received": False, "error": "signature verification failed"}
 

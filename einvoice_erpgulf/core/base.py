@@ -73,12 +73,20 @@ class BaseAdapter:
         return frappe.cache().get_value(self._cache_key())
 
     def set_cached_token(self, token, expires_in_sec=DEFAULT_TOKEN_TTL_SEC):
-        """Access tokens only ever live here (Redis, via frappe.cache())"""
+        """Cache the token in Redis and save it on the settings row."""
         frappe.cache().set_value(self._cache_key(), token, expires_in_sec=expires_in_sec)
         expiry = frappe.utils.now_datetime() + timedelta(seconds=expires_in_sec)
         frappe.cache().set_value(
             self._token_expiry_cache_key(), expiry.isoformat(), expires_in_sec=expires_in_sec
         )
+        try:
+            frappe.db.set_value(
+                self.settings.doctype, self.settings.name,
+                "last_access_token", token,
+                update_modified=False,
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "E-Invoice Save Token Error")
 
     def get_token_expiry(self):
         """Best-effort expiry of whatever token is currently cached, for

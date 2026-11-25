@@ -32,7 +32,7 @@ frappe.query_reports["E-Invoice Purchase Status Report"] = {
 			label: __("Status"),
 			"fieldtype": "Select",
 			"options": "\nreported\nfailed\nNot Submitted\nCancelled\n",
-			"default": "Valid",
+			"default": "",
 
 
 		},

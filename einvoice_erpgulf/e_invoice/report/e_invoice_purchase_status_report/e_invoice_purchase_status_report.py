@@ -64,6 +64,14 @@ def get_data(filters):
     conditions = []
     params = {}
 
+    # Company: required, and the user must be allowed to see it
+    company = filters.get("company")
+    if not company:
+        frappe.throw(_("Please select a Company"))
+    frappe.has_permission("Company", "read", company, throw=True)
+    conditions.append("company = %(company)s")
+    params["company"] = company
+
     # ✅ Date filter
     if filters.get("dt_from") and filters.get("dt_to"):
         conditions.append("posting_date BETWEEN %(dt_from)s AND %(dt_to)s")

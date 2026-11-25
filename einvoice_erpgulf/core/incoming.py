@@ -63,6 +63,7 @@ def _payment_means_option(code):
 @frappe.whitelist()
 def get_fta_incoming_invoices():
     """Fetch E-Invoice Incoming Invoice with status Not Submitted"""
+    frappe.has_permission("Purchase Invoice", "create", throw=True)
     fta_invoices = frappe.db.get_all(
         'E-Invoice Incoming Invoice',
         filters={'status': 'Not Submitted'},
@@ -77,6 +78,7 @@ def create_purchase_invoice_from_fta(docname: str):
     Read the JSON file from E-Invoice Incoming Invoice doc
     and create a Purchase Invoice from it as Draft
     """
+    frappe.has_permission("Purchase Invoice", "create", throw=True)
     try:
         # 1. Get the E-Invoice Incoming Invoice doc
         uae_doc = frappe.get_doc("E-Invoice Incoming Invoice", docname)

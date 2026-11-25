@@ -707,7 +707,7 @@ def build_uae_invoice_json(invoice_number):
     else:
         country_code1 = "AE" 
     # legal_monetary_total straight from ERPNext's own totals
-    line_extension_amount = r2(sales_invoice_doc.net_total + (sales_invoice_doc.discount_amount or 0))
+    line_extension_amount = r2(sales_invoice_doc.net_total)
     tax_exclusive_amount = r2(sales_invoice_doc.net_total)
     tax_inclusive_amount = r2(sales_invoice_doc.grand_total)
     payable_amount = float(r2(sales_invoice_doc.grand_total))
@@ -846,7 +846,7 @@ def build_uae_invoice_json(invoice_number):
                 "line_extension_amount": line_extension_amount,
                 "tax_exclusive_amount": tax_exclusive_amount,
                 "tax_inclusive_amount": tax_inclusive_amount,
-                "allowance_total_amount":  str(abs(sales_invoice_doc.get("discount_amount", 0.0))),
+                "allowance_total_amount": str(abs(sales_invoice_doc.get("discount_amount", 0.0))),
                 "charge_total_amount": str(abs(sales_invoice_doc.get("base_change_amount", 0.0))),
                 "prepaid_amount": 0,
                 "payable_rounding_amount": payable_rounding_amount,
@@ -894,11 +894,11 @@ def build_uae_invoice_json(invoice_number):
         "line_extension_amount": r2(total_net),
         "tax_exclusive_amount": r2(total_net),
         "tax_inclusive_amount": r2(total_net + total_tax),
-        "allowance_total_amount": r2(abs(Decimal(sales_invoice_doc.discount_amount or 0))),
+        "allowance_total_amount": str(abs(sales_invoice_doc.get("discount_amount", 0.0))),
         "payable_amount": r2(total_net + total_tax),
         "currency_id": sales_invoice_doc.currency
     }
-
+    invoice = apply_document_discount(sales_invoice_doc, invoice)
     return invoice
     
 def save_and_attach_invoice_json(invoice_number):
@@ -946,6 +946,8 @@ def send_invoice_json(invoice_number:str):
     """API endpoint to trigger JSON generation and attachment for a given Sales Invoice."""
     if not invoice_number:
         frappe.throw(_("Sales Invoice not provided"))
+    from einvoice_erpgulf.core.permissions import load_invoice
+    load_invoice("Sales Invoice", invoice_number, "write")
 
     result = save_and_attach_invoice_json(invoice_number)
 
@@ -960,3 +962,79 @@ def get_item_line_extension_amount(item):
     """
     amount = (item.qty * item.rate)
     return str(round(amount, 2))    
+
+# ---- Way 2: Additional Discount sent as a document-level allowance ----
+# Flick's field names for the allowance block are NOT confirmed yet.
+# If Flick rejects them, change only these names to what Flick expects.
+FLICK_ALLOWANCE_LIST_KEY = "allowance_charges"
+FLICK_ALLOWANCE_FIELDS = {
+    "indicator": "charge_indicator",   # False = allowance (discount)
+    "reason_code": "reason_code",      # UNCL5189 code, 95 = Discount
+    "reason": "reason",
+    "amount": "amount",
+    "tax_category": "tax_category",
+    "tax_percentage": "tax_percentage",
+}
+
+
+def apply_document_discount(doc, invoice):
+    """Lines at the price before the Additional Discount, plus one allowance
+    per VAT category. Totals: sum(lines) - allowance = tax exclusive."""
+    if not flt(doc.get("discount_amount")):
+        return invoice
+
+    lines = invoice.get("invoice_lines") or []
+    allowance_by_cat = {}
+    lines_before = Decimal("0")
+    lines_after = Decimal("0")
+
+    for item, line in zip(doc.items, lines):
+        after = Decimal(str(line["line_extension_amount"]))
+        share = Decimal(str(item.get("distributed_discount_amount") or 0))
+        before = Decimal(r2(after + share))
+
+        lines_after += after
+        lines_before += before
+        if before == after:
+            continue
+
+        line["line_extension_amount"] = r2(before)
+        qty = Decimal(str(item.qty or 1))
+        # keep the same type unit_price had (number or text)
+        line["unit_price"] = type(line["unit_price"])(r2(before / qty))
+
+        key = (line["tax_category"], line["tax_percentage"])
+        allowance_by_cat[key] = allowance_by_cat.get(key, Decimal("0")) + (before - after)
+
+    allowance_total = lines_before - lines_after
+    if not allowance_total:
+        return invoice  # no per-item discount share found: send as before
+
+    f = FLICK_ALLOWANCE_FIELDS
+    invoice[FLICK_ALLOWANCE_LIST_KEY] = [
+        {
+            f["indicator"]: False,
+            f["reason_code"]: "95",
+            f["reason"]: "Discount",
+            f["amount"]: r2(amount),
+            f["tax_category"]: cat,
+            f["tax_percentage"]: pct,
+        }
+        for (cat, pct), amount in allowance_by_cat.items()
+    ]
+
+    for block in ("legal_monetary_total", "invoice_totals"):
+        totals = invoice.get(block)
+        if not totals:
+            continue
+        totals["line_extension_amount"] = r2(lines_before)
+        totals["allowance_total_amount"] = r2(allowance_total)
+
+    tax_exclusive = Decimal(str(invoice["legal_monetary_total"]["tax_exclusive_amount"]))
+    if lines_before - allowance_total != tax_exclusive:
+        frappe.throw(
+            _("Discount totals do not add up: lines {0} - allowance {1} != tax exclusive {2}").format(
+                r2(lines_before), r2(allowance_total), r2(tax_exclusive)
+            )
+        )
+    return invoice

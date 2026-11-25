@@ -39,25 +39,6 @@ frappe.ui.form.on("E-Invoice Provider Settings", {
             });
         }, __("E-Invoicing"));
 
-        frm.add_custom_button(__("Get Access Token"), function () {
-            frappe.call({
-                method: "einvoice_erpgulf.core.verify_token.get_access_token",
-                args: { company: frm.doc.company, provider_settings: frm.doc.name },
-                freeze: true,
-                freeze_message: __("Fetching Access Token..."),
-                callback: function (r) {
-                    frappe.msgprint({
-                        title: __("Access Token"),
-                        message: r.message && r.message.access_token
-                            ? __("Access token fetched, cached, and saved to Last Access Token.")
-                            : __("Failed to fetch access token"),
-                        indicator: r.message && r.message.access_token ? "green" : "red"
-                    });
-                    frm.reload_doc();
-                }
-            });
-        }, __("E-Invoicing"));
-
         frm.add_custom_button(__("Subscribe Webhook"), function () {
             frappe.call({
                 method: "einvoice_erpgulf.core.webhook.register_webhook",

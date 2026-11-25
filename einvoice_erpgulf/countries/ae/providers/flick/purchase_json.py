@@ -15,7 +15,7 @@ from einvoice_erpgulf.countries.ae.profile import (
 import json
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
-
+from einvoice_erpgulf.countries.ae.providers.flick.sales_json import apply_document_discount
 def r2(val):
     return str(Decimal(val).quantize(Decimal("0.01"), ROUND_HALF_UP))
 
@@ -742,7 +742,7 @@ def build_uae_invoice_json(invoice_number):
                 "emirates_code" : get_uae_emirate_code(address_data.emirate),
                 "additional_address_lines":  address_data.address_line2,
                 "country_code": country_code1 ,
-                "vat_number": customer_doc.tax_id ,
+                "vat_number": customer_doc.tax_id,
                 "legal_name":  customer_doc.supplier_name,
                 # "identifiers":  [
                 #         {
@@ -899,7 +899,7 @@ def build_uae_invoice_json(invoice_number):
     "payable_amount": r2(total_net + total_tax),
     "currency_id": sales_invoice_doc.currency
     }
-
+    invoice = apply_document_discount(sales_invoice_doc, invoice)
     return invoice
     
 def save_and_attach_invoice_json(invoice_number):
@@ -946,7 +946,8 @@ def save_and_attach_invoice_json(invoice_number):
 def send_invoice_json(invoice_number: str):
     if not invoice_number:
         frappe.throw(_("Purchase Invoice not provided"))
-
+    from einvoice_erpgulf.core.permissions import load_invoice
+    load_invoice("Purchase Invoice", invoice_number, "write")
     result = save_and_attach_invoice_json(invoice_number)
 
     return {

@@ -110,15 +110,79 @@ def document_type(doc):
 
 
 def transaction_type_code(doc):
-    """BTOM-001: 20-bit binary string. Defaults to all zeros (standard
-    domestic B2B) when the field is empty."""
+    """BTOM-001: 20 characters of 0/1. Position 1 = full tax invoice,
+    position 2 = simplified; exactly one of them must be 1 (ibr-043-om).
+    When neither is set, position 1 or 2 is filled in from the customer's
+    B2C flag; the remaining 18 positions are taken as entered."""
     code = (doc.get("custom_om_transaction_type_code") or "").strip() or DEFAULT_TRANSACTION_TYPE
     if not re.fullmatch(r"[01]{20}", code):
         frappe.throw(
             _("Oman Transaction Type Code must be exactly 20 characters of 0/1. Got: {0}").format(code),
             title=_("Invalid Transaction Type Code"),
         )
+    if code[:2] == "00":
+        b2c = doc.doctype == "Sales Invoice" and frappe.db.get_value("Customer", doc.customer, "custom_is_b2c_customer")
+        code = ("01" if b2c else "10") + code[2:]
+    elif code[:2] == "11":
+        frappe.throw(
+            _("Oman Transaction Type Code: position 1 (Full Tax) and position 2 (Simplified) cannot both be 1."),
+            title=_("Invalid Transaction Type Code"),
+        )
     return code
+
+
+def address_line3(address):
+    """IBT-162: ERPNext has no third address line, so Oman reuses Address Line 2."""
+    return (address.address_line2 or "").strip() or None
+
+
+def issuing_party(doc):
+    """Seller (IBG-04) from the company's default address. Oman requires
+    address lines 2 and 3 for the seller (ibr-010-om)."""
+    from erpnext.setup.doctype.company.company import get_default_company_address
+
+    company = frappe.get_cached_doc("Company", doc.company)
+    address_name = doc.get("company_address") or get_default_company_address(doc.company)
+    if not address_name:
+        frappe.throw(_("Set a default company address (Is Your Company Address) for {0}.").format(doc.company))
+    address = frappe.get_doc("Address", address_name)
+
+    line2 = (address.address_line2 or "").strip()
+    line3 = address_line3(address)
+    errors = []
+    if not address.address_line1 or not address.city:
+        errors.append(_("Address Line 1 and City are required on company address {0}").format(address.name))
+    if not line2:
+        errors.append(_("Address Line 2 (IBT-036) is required on company address {0}").format(address.name))
+    if not line3:
+        errors.append(_("Address Line 3 (IBT-162) is required on company address {0}").format(address.name))
+    if errors:
+        frappe.throw("<br>".join(errors), title=_("Company Address Incomplete"))
+
+    identifiers = []
+    if company.get("custom_trade_license_number"):
+        identifiers.append({"type": "TL", "value": company.custom_trade_license_number})
+
+    result = {
+        "legal_name": company.company_name,
+        "trade_name": company.company_name,
+        "peppol_id": format_peppol_id(company.get("custom_peppol_id") or company.tax_id, _("Company")),
+        "vat_number": company.tax_id or None,
+        "street_address": address.address_line1,
+        "additional_street_address": line2,
+        "additional_address_lines": line3,
+        "city_address": address.city,
+        "postal_zone": address.pincode or None,
+        "country_code": country_code(address.country),
+        "identifiers": identifiers,
+        "contact_name": company.company_name,
+        "contact_telephone": address.phone or None,
+        "contact_email": address.email_id or company.get("email") or None,
+    }
+    zone = (address.get("custom_om_special_zone") or "").strip()
+    if zone in SPECIAL_ZONES:
+        result["country_subdivision_code"] = zone
+    return {k: v for k, v in result.items() if v not in (None, "", [])}
 
 
 # ---------------------------------------------------------------- parties
@@ -138,6 +202,7 @@ def receiving_party(doc):
     if not address:
         frappe.throw(_("{0} address not found on {1}").format(label, doc.name))
 
+    line3 = address_line3(address)
     errors = []
     if not address.address_line1:
         errors.append(_("Address Line 1 is missing on {0}").format(address.name))
@@ -145,6 +210,13 @@ def receiving_party(doc):
         errors.append(_("City is missing on {0}").format(address.name))
     if not address.country:
         errors.append(_("Country is missing on {0}").format(address.name))
+    # ibr-019-om: buyer address lines 1-3, city and postal code
+    if not (address.address_line2 or "").strip():
+        errors.append(_("Address Line 2 is missing on {0}").format(address.name))
+    if not line3:
+        errors.append(_("Address Line 3 is missing on {0}").format(address.name))
+    if not address.pincode:
+        errors.append(_("Postal Code is missing on {0}").format(address.name))
     if errors:
         frappe.throw("<br>".join(errors), title=_("{0} Address Incomplete").format(label))
 
@@ -155,6 +227,7 @@ def receiving_party(doc):
         "vat_number": party.tax_id or None,
         "street_address": address.address_line1,
         "additional_street_address": address.address_line2 or None,
+        "additional_address_lines": line3,
         "city_address": address.city,
         "postal_zone": address.pincode or None,
         "country_code": country_code(address.country),
@@ -514,6 +587,7 @@ def build_invoice_json(doctype, name):
         "order_reference": order_reference(doc),
         "credit_note_reason_code": credit_note_reason(doc),
         "document_references": references,
+        "issuing_party": issuing_party(doc),
         "receiving_party": receiving_party(doc),
         "delivery": delivery(doc),
         "payment_means": payment_means(doc),
@@ -564,6 +638,6 @@ def send_invoice_json(doctype: str, invoice_number: str):
     """Preview button: build and attach the JSON without sending it."""
     if doctype not in ("Sales Invoice", "Purchase Invoice"):
         frappe.throw(_("Unsupported doctype {0}").format(doctype))
-    frappe.has_permission(doctype, "read", invoice_number, throw=True)
+    frappe.has_permission(doctype, "write", invoice_number, throw=True)
     result = save_and_attach_invoice_json(doctype, invoice_number)
     return {"message": _("Invoice JSON generated and attached"), "file_url": result["file_url"]}

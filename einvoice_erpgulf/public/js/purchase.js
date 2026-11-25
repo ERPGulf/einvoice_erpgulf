@@ -16,9 +16,9 @@ frappe.ui.form.on("Purchase Invoice", {
                 () => {
 
                     frm.call({
-                        method: "einvoice_erpgulf.core.send_purchase.generate_and_send_einvoice",
+                        method: "einvoice_erpgulf.core.send_purchase.send_einvoice",
                         args: {
-                            doc: frm.doc
+                            invoice_name: frm.doc.name
                         },
                         freeze: true,
                         freeze_message: __("Generating and sending E-Invoice..."),
