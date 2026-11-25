@@ -65,6 +65,7 @@ einvoice_providers = {
         "Suntech Business Solutions DMCC": "einvoice_erpgulf.countries.ae.providers.suntech.adapter.SuntechAdapter",
         # "Fynamics Techno Solutions FZCO": "einvoice_erpgulf.countries.ae.providers.fynamics.adapter.FynamicsAdapter",
         "A-Cube": "einvoice_erpgulf.countries.ae.providers.acube.adapter.ACubeAdapter",
+        # "KGRN Chartered Accountants": "einvoice_erpgulf.countries.ae.providers.kgrn.adapter.KgrnAdapter",
     },
     "OM": {
         # Oman-accredited providers, each in its own Oman folder:
@@ -154,6 +155,9 @@ scheduler_events = {
         ],
         "*/5 * * * *": [
             "einvoice_erpgulf.core.status_sync.sync_pending_invoices",
+        ],
+        "17 * * * *": [
+            "einvoice_erpgulf.countries.ae.providers.kgrn.adapter.pull_incoming_scheduled",
         ],
     }
 }

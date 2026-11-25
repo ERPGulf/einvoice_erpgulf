@@ -146,7 +146,7 @@ class FlickAdapter(BaseAdapter):
             frappe.throw(_("Access token not found in response"))
         expires_in = response_json.get("expires_in")
         if isinstance(expires_in, (int, float)) and expires_in > 0:
-            self.set_cached_token(access_token, expires_in_sec=int(expires_in))
+            self.set_cached_token(access_token, expires_in_sec=max(int(expires_in) - 30, 60))
         else:
             self.set_cached_token(access_token)
 
@@ -283,9 +283,6 @@ class FlickAdapter(BaseAdapter):
 
         base_url = self.get_base_url()
         headers = self.get_auth_headers({"Content-Type": "application/json"})
-
-       
-
         # if doctype == "Purchase Invoice":
         #     url = self._participant_url("/simulate/incoming")
         # else:
@@ -293,25 +290,42 @@ class FlickAdapter(BaseAdapter):
 
         env = (settings.get("custom_environment") or "").strip().lower()
 
+        # if doctype == "Purchase Invoice":
+        #     if env == "sandbox":
+        #         url = self._participant_url("/simulate/incoming")
+        #     else:
+        #         # pre-prod / production: self-billed invoice (389) via the normal documents endpoint
+        #         url = self._participant_url("/documents")
+        #         flags = json_data.pop("metadata", None) or json_data.get("flags") or {}
+        #         flags["is_selfbilled"] = True
+        #         json_data["flags"] = flags
+        #         if json_data.get("document_type") not in ("389", "261"):
+        #             json_data["document_type"] = "261" if doc.get("is_return") else "389"
+        # else:
+        #     url = self._participant_url("/documents")
+
+        # env = (settings.get("custom_environment") or "").strip().lower()
+        # if env == "sandbox" and doctype != "Purchase Invoice":
+        #     json_data = to_flick_sandbox_schema(json_data)
+        # payload = {"document": json_data}
+        selfbilled = False
         if doctype == "Purchase Invoice":
             if env == "sandbox":
                 url = self._participant_url("/simulate/incoming")
             else:
-                # pre-prod / production: self-billed invoice (389) via the normal documents endpoint
+                # pre-prod / production: self-billed invoice, sent as in Flick's reference:
+                # document_type 389 / 261 marks it self-billed, no is_selfbilled flag,
+                # metadata kept, JSON at the top level (no "document" wrapper)
                 url = self._participant_url("/documents")
-                flags = json_data.pop("metadata", None) or json_data.get("flags") or {}
-                flags["is_selfbilled"] = True
-                json_data["flags"] = flags
+                selfbilled = True
                 if json_data.get("document_type") not in ("389", "261"):
                     json_data["document_type"] = "261" if doc.get("is_return") else "389"
         else:
             url = self._participant_url("/documents")
 
-        env = (settings.get("custom_environment") or "").strip().lower()
         if env == "sandbox" and doctype != "Purchase Invoice":
             json_data = to_flick_sandbox_schema(json_data)
-        payload = {"document": json_data}
-
+        payload = json_data if selfbilled else {"document": json_data}
         response = requests.post(url, headers=headers, json=payload, timeout=120)
 
         try:

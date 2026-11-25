@@ -742,8 +742,7 @@ def build_uae_invoice_json(invoice_number):
                 "emirates_code" : get_uae_emirate_code(address_data.emirate),
                 "additional_address_lines":  address_data.address_line2,
                 "country_code": country_code1 ,
-                # no "vat_number": on a self-billed invoice Flick reads it as a second
-                # buyer tax ID (ibr-104). The supplier's VAT goes in identifiers["AE:VAT"].
+                "vat_number": customer_doc.tax_id,
                 "legal_name":  customer_doc.supplier_name,
                 # "identifiers":  [
                 #         {

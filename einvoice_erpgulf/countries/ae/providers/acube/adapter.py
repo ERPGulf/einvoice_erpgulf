@@ -264,6 +264,69 @@ class ACubeAdapter(BaseAdapter):
 		elif payee is not None:
 			pm.remove(payee)  # cash, card...: no bank account
 			
+	def _delivery_address(self, doc):
+		"""Deliver-to Address doc: the shipping address, else the buyer's address."""
+		if doc.doctype == "Sales Invoice":
+			name = doc.get("shipping_address_name") or doc.get("customer_address")
+		else:
+			name = doc.get("shipping_address") or doc.get("billing_address")
+		return frappe.get_doc("Address", name) if name else None
+
+	def _apply_delivery(self, root, doc):
+		"""cac:Delivery (IBG-13) for exports. ibr-152-ae: when the delivery
+		country isn't AE, the deliver-to address needs line 1 (IBT-075),
+		city (IBT-077) and country subdivision (IBT-079). Domestic invoices
+		are left as they are."""
+		if root.find("cac:Delivery", NS) is not None:
+			return
+		address = self._delivery_address(doc)
+		if not address:
+			return
+		country, subdivision = self.profile.resolve_address_codes(address)
+		if country == "AE":
+			return
+
+		missing = [label for label, value in (
+			(_("Address Line 1"), address.get("address_line1")),
+			(_("City"), address.get("city")),
+			(_("State / Country Subdivision"), subdivision),
+		) if not value]
+		if missing:
+			frappe.throw(_("Export invoice: deliver-to Address {0} is missing {1} (PINT-AE ibr-152-ae).").format(
+				address.name, ", ".join(missing)))
+
+		delivery = _el("cac", "Delivery")
+		if doc.get("update_stock"):  # goods leave stock with this invoice
+			delivery.append(_el("cbc", "ActualDeliveryDate", doc.posting_date))
+		location = _el("cac", "DeliveryLocation")
+		addr = _el("cac", "Address")
+		addr.append(_el("cbc", "StreetName", address.address_line1))
+		if address.get("address_line2"):
+			addr.append(_el("cbc", "AdditionalStreetName", address.address_line2))
+		addr.append(_el("cbc", "CityName", address.city))
+		if address.get("pincode"):
+			addr.append(_el("cbc", "PostalZone", address.pincode))
+		addr.append(_el("cbc", "CountrySubentity", subdivision))
+		ctry = _el("cac", "Country")
+		ctry.append(_el("cbc", "IdentificationCode", country))
+		addr.append(ctry)
+		location.append(addr)
+		delivery.append(location)
+		if address.get("address_title"):
+			party = _el("cac", "DeliveryParty")
+			pn = _el("cac", "PartyName")
+			pn.append(_el("cbc", "Name", address.address_title))
+			party.append(pn)
+			delivery.append(party)
+
+		# UBL order: Delivery comes after the parties and before PaymentMeans
+		anchor = None
+		for tag in ("TaxRepresentativeParty", "PayeeParty", "AccountingCustomerParty"):
+			anchor = root.find(f"cac:{tag}", NS)
+			if anchor is not None:
+				break
+		_insert_after(root, anchor, delivery)
+
 	def build_pint_ae(self, doc):
 		"""The shared UBL builder's document plus the PINT-AE pieces it doesn't
 		add yet: BTAE-02 transaction type, BTAE-07 UUID, seller/buyer legal
@@ -309,6 +372,7 @@ class ACubeAdapter(BaseAdapter):
 
 				# payment means from the invoice's Mode of Payment, as the other UAE adapters do
 		self._apply_payment_means(root, doc)
+		self._apply_delivery(root, doc)  # exports: deliver-to address (ibr-152-ae)
 		# lines
 		for ln in root.findall("cac:InvoiceLine", NS) + root.findall("cac:CreditNoteLine", NS):
 			qty_el = ln.find("cbc:InvoicedQuantity", NS)
