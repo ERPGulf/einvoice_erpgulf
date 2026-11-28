@@ -153,16 +153,52 @@ class FlickAdapter(BaseAdapter):
         return access_token
 
     # ---- verify / participant ----
+    # def verify_auth(self):
+    #     settings = self.settings
+    #     base_url = self.get_base_url()
+
+    #     if not base_url:
+    #         frappe.throw(_("Please enter Base URL on E-Invoice Provider Settings."))
+
+    #     try:
+    #         headers = self.get_auth_headers()
+    #         response = requests.get(f"{base_url}/v1/auth/verify", headers=headers, timeout=60)
+
+    #         try:
+    #             response_text = json.dumps(response.json())
+    #         except Exception:
+    #             response_text = response.text
+
+    #         settings.db_set("last_test_status", "Passed" if response.ok else "Failed")
+    #         settings.db_set("last_test_on", now_datetime())
+
+    #         return {"status": "success" if response.ok else "error", "response": response_text}
+
+    #     except Exception as e:
+    #         frappe.log_error(frappe.get_traceback(), "Flick Verify Error")
+    #         settings.db_set("last_test_status", "Failed")
+    #         settings.db_set("last_test_on", now_datetime())
+    #         return {"status": "error", "message": str(e)}
     def verify_auth(self):
+        """OAuth2 rows check the token at /v1/auth/verify. API-key rows check
+        the key against the participant endpoint, because /v1/auth/verify
+        doesn't accept X-Flick-Auth-Key on pre-production."""
         settings = self.settings
         base_url = self.get_base_url()
 
         if not base_url:
             frappe.throw(_("Please enter Base URL on E-Invoice Provider Settings."))
 
+        if settings.auth_type == "api_key":
+            if not settings.participant_id:
+                frappe.throw(_("Please enter Participant ID on E-Invoice Provider Settings."))
+            url = f"{base_url}/v1/participants/{settings.participant_id}"
+        else:
+            url = f"{base_url}/v1/auth/verify"
+
         try:
             headers = self.get_auth_headers()
-            response = requests.get(f"{base_url}/v1/auth/verify", headers=headers, timeout=60)
+            response = requests.get(url, headers=headers, timeout=60)
 
             try:
                 response_text = json.dumps(response.json())

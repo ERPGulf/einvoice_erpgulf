@@ -172,8 +172,6 @@ class KgrnAdapter(BaseAdapter):
 		return build_kgrn_payload(doc, self.settings, self.profile, self.PUSH_STATE)
 
 	def submit_invoice(self, doctype, doc, json_data=None):
-		if doctype != "Sales Invoice":
-			self._not_supported("Purchase Invoice (self-billing) submission")
 		payload = json_data or self.build_payload(doc)
 		self.save_outgoing_payload(doc, payload)
 		r = self._request("POST", OUTBOUND, json=payload, headers={"Content-Type": "application/json"})
