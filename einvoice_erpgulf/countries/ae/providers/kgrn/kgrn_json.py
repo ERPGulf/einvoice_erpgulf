@@ -1,5 +1,7 @@
 """KGRN only - builds the Outbound API v2 request (UAE PINT V2.0 structure,
-the "Business Central" 217-field JSON plus PushState) for a Sales Invoice.
+the "Business Central" 217-field JSON plus PushState) for a Sales Invoice,
+or for a Purchase Invoice sent as a self-billed invoice (389) / self-billed
+credit note (261): there the Supplier is the seller and our Company the buyer.
 
 Spec: KGRN-Outbound-API-v2.md / API-Structure.json from KGRN.
 KGRN recomputes LegalMonetaryTotal and the VAT breakdown from the lines and
@@ -64,19 +66,21 @@ def _address(name):
 	return frappe.get_doc("Address", name) if name else None
 
 
+def _is_self_billed(doc):
+	return doc.doctype == "Purchase Invoice"
+
+
 def _company_address(doc):
-	if doc.get("company_address"):
-		return _address(doc.company_address)
+	# Sales Invoice: company_address. Purchase Invoice: billing_address is the company's.
+	name = doc.get("company_address") or doc.get("billing_address")
+	if name:
+		return _address(name)
 	name = frappe.db.get_value(
 		"Dynamic Link",
 		{"link_doctype": "Company", "link_name": doc.company, "parenttype": "Address"},
 		"parent",
 	)
 	return _address(name)
-
-
-def _customer_address(doc, customer):
-	return _address(doc.get("customer_address") or customer.get("customer_primary_address"))
 
 
 def _postal(addr, profile):
@@ -125,6 +129,8 @@ def _peppol_tin(value):
 
 # ---------------------------------------------------------------- header pieces
 def invoice_type_code(doc):
+	if _is_self_billed(doc):
+		return "261" if doc.is_return else "389"
 	out_of_scope = vat_category_code(doc.get("custom_vat_category")) == "O" if doc.get("custom_vat_category") else False
 	if doc.is_return:
 		return "81" if out_of_scope else "381"
@@ -159,7 +165,7 @@ def _billing_reference(doc):
 	ref_id, ref_date = "", ""
 	if doc.return_against:
 		ref_id = doc.return_against
-		ref_date = _date(frappe.db.get_value("Sales Invoice", doc.return_against, "posting_date"))
+		ref_date = _date(frappe.db.get_value(doc.doctype, doc.return_against, "posting_date"))
 	elif doc.get("custom_return_against_for_einvoice"):
 		ref_id = doc.custom_return_against_for_einvoice
 	if not ref_id:
@@ -175,22 +181,73 @@ def _billing_reference(doc):
 
 
 # ---------------------------------------------------------------- parties
-def _seller(doc, company, settings, profile):
+def _parties(doc, settings):
+	"""(seller, buyer) as plain dicts.
+	Sales Invoice: our Company sells to the Customer.
+	Purchase Invoice (self-billing): the Supplier sells to our Company, we issue it."""
+	company = frappe.get_doc("Company", doc.company)
 	trn = _s(company.tax_id or settings.get("trn"))
 	if not trn:
 		frappe.throw(_("Set the Tax ID (TRN) on Company {0}.").format(company.name))
-	addr = _company_address(doc)
+	us = {
+		"doc": company,
+		"label": _("Company"),
+		"name": _s(company.company_name),
+		"trn": trn,
+		"endpoint": settings.participant_id or trn,
+		"address": _company_address(doc),
+		"contact": _s(company.company_name),
+		"phone": _s(company.get("phone_no")),
+		"email": _s(company.get("email")),
+	}
+
+	if _is_self_billed(doc):
+		supplier = frappe.get_doc("Supplier", doc.supplier)
+		if not supplier.tax_id:
+			frappe.throw(_("Self-billing: set the Tax ID (TRN) on Supplier {0}.").format(supplier.name))
+		them = {
+			"doc": supplier,
+			"label": _("Supplier"),
+			"name": _s(supplier.supplier_name),
+			"trn": _s(supplier.tax_id),
+			"endpoint": supplier.get("custom_peppol_id") or supplier.tax_id,
+			"address": _address(doc.get("supplier_address") or supplier.get("supplier_primary_address")),
+			"contact": _s(doc.get("contact_display") or supplier.supplier_name),
+			"phone": _s(doc.get("contact_mobile")),
+			"email": _s(doc.get("contact_email")),
+		}
+		return them, us
+
+	customer = frappe.get_doc("Customer", doc.customer)
+	them = {
+		"doc": customer,
+		"label": _("Customer"),
+		"name": _s(customer.customer_name),
+		"trn": _s(customer.tax_id),
+		"endpoint": customer.get("custom_peppol_id") or customer.tax_id,
+		"address": _address(doc.get("customer_address") or customer.get("customer_primary_address")),
+		"contact": _s(doc.get("contact_display") or customer.customer_name),
+		"phone": _s(doc.get("contact_mobile")),
+		"email": _s(doc.get("contact_email")),
+	}
+	return us, them
+
+
+def _seller(doc, p, profile):
+	addr = p["address"]
 	if not addr:
-		frappe.throw(_("Company {0} has no address.").format(company.name))
+		frappe.throw(_("{0} {1} has no address.").format(p["label"], p["doc"].name))
+	if not p["endpoint"]:
+		frappe.throw(_("Set Peppol ID or Tax ID on {0} {1}.").format(p["label"], p["doc"].name))
 	street, street2, city, sub, pin, cc = _postal(addr, profile)
-	reg_type, reg_no, authority = _legal_registration(company)
+	reg_type, reg_no, authority = _legal_registration(p["doc"])
 	slots = _registration_slots(reg_type, reg_no)
 
 	return {
 		"AccountingSupplierParty.SellerCode": "",
 		"AccountingSupplierParty.EndpointID": {
 			"AccountingSupplierParty.schemeID": EAS_SCHEME,
-			"AccountingSupplierParty.SellerElectronicAddress": _peppol_tin(settings.participant_id or trn),
+			"AccountingSupplierParty.SellerElectronicAddress": _peppol_tin(p["endpoint"]),
 		},
 		"AccountingSupplierParty.PartyIdentification": [{
 			"BankassignedcreditorSchemeIdentifier": "",
@@ -207,7 +264,7 @@ def _seller(doc, company, settings, profile):
 			"SellerAuthorityname": authority,
 			"SellerPassportIssuingCountrycode": authority if reg_type == "PAS" else "",
 		}],
-		"AccountingSupplierParty.PartyName": {"AccountingSupplierParty.Name": _s(company.company_name)},
+		"AccountingSupplierParty.PartyName": {"AccountingSupplierParty.Name": p["name"]},
 		"AccountingSupplierParty.PostalAddress": {
 			"AccountingSupplierParty.StreetName": street,
 			"AccountingSupplierParty.AdditionalStreetName": street2,
@@ -217,39 +274,38 @@ def _seller(doc, company, settings, profile):
 			"AccountingSupplierParty.PostalZone": pin,
 			"AccountingSupplierParty.Country": {"AccountingSupplierParty.IdentificationCode": cc},
 		},
-		"AccountingSupplierParty.TaxID": {"SellerTaxidentifier": trn, "SellerTaxSchemeID": "VAT"},
+		"AccountingSupplierParty.TaxID": {"SellerTaxidentifier": p["trn"], "SellerTaxSchemeID": "VAT"},
 		"AccountingSupplierParty.PartyLegalEntity": {
-			"AccountingSupplierParty.RegistrationName": _s(company.company_name),
+			"AccountingSupplierParty.RegistrationName": p["name"],
 			"Selleradditionallegalinformation": "",
 		},
 		"AccountingSupplierParty.Contact": {
-			"AccountingSupplierParty.Name": _s(company.company_name),
-			"AccountingSupplierParty.Telephone": _s(addr.phone or company.get("phone_no")),
-			"AccountingSupplierParty.EmailID": _s(addr.email_id or company.get("email")),
+			"AccountingSupplierParty.Name": p["contact"],
+			"AccountingSupplierParty.Telephone": _s(addr.phone or p["phone"]),
+			"AccountingSupplierParty.EmailID": _s(addr.email_id or p["email"]),
 		},
 	}
 
 
-def _buyer(doc, customer, profile, flags):
-	addr = _customer_address(doc, customer)
+def _buyer(doc, p, profile, flags):
+	addr = p["address"]
 	if not addr:
-		frappe.throw(_("Customer {0} has no address.").format(customer.name))
+		frappe.throw(_("{0} {1} has no address.").format(p["label"], p["doc"].name))
 	street, street2, city, sub, pin, cc = _postal(addr, profile)
-	reg_type, reg_no, authority = _legal_registration(customer)
+	reg_type, reg_no, authority = _legal_registration(p["doc"])
 	slots = _registration_slots(reg_type, reg_no)
 
 	if flags[1] == "1":  # deemed supply goes to the notional participant
 		buyer_endpoint = DEEMED_SUPPLY_BUYER
 	else:
-		raw = customer.get("custom_peppol_id") or customer.tax_id
-		if not raw:
-			frappe.throw(_("Set Peppol ID or Tax ID on Customer {0}.").format(customer.name))
-		buyer_endpoint = _peppol_tin(raw)
+		if not p["endpoint"]:
+			frappe.throw(_("Set Peppol ID or Tax ID on {0} {1}.").format(p["label"], p["doc"].name))
+		buyer_endpoint = _peppol_tin(p["endpoint"])
 
 	if (doc.is_return or invoice_type_code(doc) in ("480", "81")) and not reg_no:
 		frappe.throw(
-			_("IBR-136-ae: Customer {0} needs a Legal Registration Number for a credit note or out-of-scope invoice.").format(
-				customer.name
+			_("IBR-136-ae: {0} {1} needs a Legal Registration Number for a credit note or out-of-scope invoice.").format(
+				p["label"], p["doc"].name
 			)
 		)
 
@@ -257,7 +313,7 @@ def _buyer(doc, customer, profile, flags):
 		"BuyerCode": "",
 		"EndpointID": {"BuyerElectronicAddressSchemeID": EAS_SCHEME, "BuyerElectronicAddress": buyer_endpoint},
 		"PartyIdentification": {"BuyerIdentifier": "", "BuyerSchemeIdentifier": ""},
-		"PartyName": {"TradingName": _s(customer.customer_name)},
+		"PartyName": {"TradingName": p["name"]},
 		"PostalAddress": {
 			"StreetName": street,
 			"AdditionalStreetName": street2,
@@ -268,7 +324,7 @@ def _buyer(doc, customer, profile, flags):
 			"Country": {"IdentificationCode": cc},
 		},
 		"PartyTaxScheme": {
-			"BuyerTaxID": _s(customer.tax_id),
+			"BuyerTaxID": p["trn"],
 			"TaxScheme": {
 				"BuyerTaxSchemeID": "VAT",
 				"Buyerlegalregistrationidentifiertype": reg_type,
@@ -280,16 +336,16 @@ def _buyer(doc, customer, profile, flags):
 				"BuyerPassportIssuingCountrycode": authority if reg_type == "PAS" else "",
 			},
 			"PartyLegalEntity": {
-				"RegistrationName": _s(customer.customer_name),
+				"RegistrationName": p["name"],
 				"CompanyID": {
 					"BuyerLegalRegistrationSchemeID": EAS_SCHEME if reg_no else "",
 					"BuyerLegalRegistrationIdentifier": reg_no,
 				},
 			},
 			"Contact": {
-				"Name": _s(doc.get("contact_display") or customer.customer_name),
-				"Telephone": _s(addr.phone or doc.get("contact_mobile")),
-				"ElectronicEmail": _s(addr.email_id or doc.get("contact_email")),
+				"Name": p["contact"],
+				"Telephone": _s(addr.phone or p["phone"]),
+				"ElectronicEmail": _s(addr.email_id or p["email"]),
 			},
 		},
 	}
@@ -298,7 +354,7 @@ def _buyer(doc, customer, profile, flags):
 def _delivery(doc, profile, flags):
 	"""Delivery address is required for export (00000001) and e-commerce (00000010)."""
 	needs = flags[6] == "1" or flags[7] == "1"
-	addr = _address(doc.get("shipping_address_name")) if needs else None
+	addr = _address(doc.get("shipping_address_name") or doc.get("shipping_address")) if needs else None
 	if needs and not addr:
 		frappe.throw(_("Set a Shipping Address: export / e-commerce invoices need the delivery address."))
 	street, street2, city, sub, pin, cc = _postal(addr, profile) if addr else ("",) * 6
@@ -317,17 +373,21 @@ def _delivery(doc, profile, flags):
 				"Delivery.Country": {"Delivery.IdentificationCode": cc},
 			},
 		},
-		"Delivery.DeliveryParty": {"Delivery.PartyName": _s(doc.customer_name) if needs else "", "Incoterms": ""},
+		"Delivery.DeliveryParty": {"Delivery.PartyName": _s(doc.get("customer_name") or doc.company) if needs else "", "Incoterms": ""},
 	}
 
 
 # ---------------------------------------------------------------- payment
 def _payment_means_code(doc):
-	for row in doc.get("payments") or []:
-		if row.mode_of_payment:
-			value = frappe.db.get_value("Mode of Payment", row.mode_of_payment, "custom_payment_means_codes")
-			if value:
-				return split_code(value)[0]
+	modes = [row.mode_of_payment for row in doc.get("payments") or [] if row.mode_of_payment]
+	if doc.get("mode_of_payment"):
+		modes.append(doc.mode_of_payment)
+	for mode in modes:
+		value = frappe.db.get_value("Mode of Payment", mode, "custom_payment_means_codes")
+		if value:
+			return split_code(value)[0]
+	if doc.get("custom_payment_means_codes"):  # Purchase Invoice field
+		return split_code(doc.custom_payment_means_codes)[0]
 	return "30"  # credit transfer
 
 
@@ -335,9 +395,16 @@ def _payment_means(doc):
 	code = _payment_means_code(doc)
 	account_id = account_name = ""
 	if code in BANK_PAYMENT_CODES:
+		# the payee is the seller: our company, or the supplier on a self-billed invoice
+		if _is_self_billed(doc):
+			filters = {"party_type": "Supplier", "party": doc.supplier, "disabled": 0}
+			missing = _("ibr-192-ae: add the IBAN on a Bank Account for Supplier {0} for credit transfer.").format(doc.supplier)
+		else:
+			filters = {"company": doc.company, "is_company_account": 1, "disabled": 0}
+			missing = _("ibr-192-ae: add the company IBAN on a company Bank Account for credit transfer.")
 		bank = frappe.db.get_value(
 			"Bank Account",
-			{"company": doc.company, "is_company_account": 1, "disabled": 0},
+			filters,
 			["iban", "bank_account_no", "account_name"],
 			order_by="is_default desc",
 			as_dict=True,
@@ -346,7 +413,7 @@ def _payment_means(doc):
 			account_id = _s(bank.iban or bank.bank_account_no).replace(" ", "")
 			account_name = _s(bank.account_name)
 		if not account_id:
-			frappe.throw(_("ibr-192-ae: add the company IBAN on a company Bank Account for credit transfer."))
+			frappe.throw(missing)
 	return {
 		"PaymentMeansCode": code,
 		"PaymentInstructionsID": "",
@@ -461,27 +528,34 @@ def _line(doc, idx, item):
 
 # ---------------------------------------------------------------- the request
 def build_kgrn_payload(doc, settings, profile, push_state="submit"):
-	"""Outbound API v2 request body for one Sales Invoice."""
-	if doc.doctype != "Sales Invoice":
-		frappe.throw(_("KGRN adapter sends Sales Invoices only."))
+	"""Outbound API v2 request body for one Sales Invoice, or a Purchase
+	Invoice sent as a self-billed invoice / credit note."""
+	if doc.doctype not in ("Sales Invoice", "Purchase Invoice"):
+		frappe.throw(_("KGRN adapter sends Sales and Purchase Invoices only."))
 
-	company = frappe.get_doc("Company", doc.company)
-	customer = frappe.get_doc("Customer", doc.customer)
+	seller, buyer = _parties(doc, settings)
+	counterpart = seller["doc"] if _is_self_billed(doc) else buyer["doc"]
 	flags = _flags(doc)
 	start, end = _invoice_period(doc, flags)
 	foreign = (doc.currency or "AED").upper() != profile.currency
 
 	beneficiary = ""
 	if flags[0] == "1":
-		beneficiary = _s(customer.get("custom_fz_beneficiary_id"))
+		beneficiary = _s(counterpart.get("custom_fz_beneficiary_id"))
 		if not beneficiary:
-			frappe.throw(_("FZ Beneficiary ID is mandatory on Customer {0} for Free Trade Zone.").format(customer.name))
+			frappe.throw(_("FZ Beneficiary ID is mandatory on {0} {1} for Free Trade Zone.").format(
+				counterpart.doctype, counterpart.name))
 
 	principal = _s(doc.get("custom_principal_id"))
 	if flags[5] == "1" and not principal:
 		frappe.throw(_("Principal TRN (custom_principal_id) is mandatory for Disclosed Agent Billing."))
 
-	so = next((i.sales_order for i in doc.items if i.get("sales_order")), "") if doc.get("po_no") else ""
+	if _is_self_billed(doc):
+		po = next((i.purchase_order for i in doc.items if i.get("purchase_order")), "")
+		so = ""
+	else:
+		po = doc.get("po_no")
+		so = next((i.sales_order for i in doc.items if i.get("sales_order")), "") if po else ""
 	if (_s(doc.get("custom_frequency_billing_code_list")) == "OTH") and not doc.get("custom_invoice_note"):
 		frappe.throw(_("Invoice Note is mandatory when Frequency of Billing is OTH."))
 
@@ -504,7 +578,7 @@ def build_kgrn_payload(doc, settings, profile, push_state="submit"):
 		"DocumentCurrencyCode": (doc.currency or "AED").upper(),
 		"VATCurrencyCode": profile.currency if foreign else "",
 		"AccountingCost": _s(doc.get("cost_center")),
-		"BuyerReference": _s(doc.get("custom_buyer_reference") or doc.get("po_no") or doc.name),
+		"BuyerReference": _s(doc.get("custom_buyer_reference") or po or doc.name),
 		"InvoicePeriod.StartDate": start,
 		"InvoicePeriod.EndDate": end,
 		"Invoicetransactiontypecode": flags,
@@ -512,7 +586,7 @@ def build_kgrn_payload(doc, settings, profile, push_state="submit"):
 		"PrincipleID": principal,
 		"BeneficiaryID": beneficiary,
 		"ExchangeRate": str(flt(doc.conversion_rate, 6)) if foreign else "",
-		"Purchaseorderreference": _s(doc.get("po_no")),
+		"Purchaseorderreference": _s(po),
 		"Salesorderreference": _s(so),
 		"Despatchadvicereference": "",
 		"Receivingadvicereference": "",
@@ -526,8 +600,8 @@ def build_kgrn_payload(doc, settings, profile, push_state="submit"):
 		"BillingReference": _billing_reference(doc),
 		"AdditionalInvoiceObject": {"InvoiceObjectId": "", "InvoiceObjectSchemeId": "", "DocumentTypecode": ""},
 		"AdditionalDocumentDetails": [],
-		"AccountingSupplierParty": _seller(doc, company, settings, profile),
-		"AccountingCustomerParty": _buyer(doc, customer, profile, flags),
+		"AccountingSupplierParty": _seller(doc, seller, profile),
+		"AccountingCustomerParty": _buyer(doc, buyer, profile, flags),
 		"payee": {
 			"payeeidentifier": "",
 			"payeeidentifierSchemeIdentifier": "",
